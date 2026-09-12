@@ -97,9 +97,10 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
 }
 
 class Skill {
-  constructor({ id, name, actions = [] }) {
+  constructor({ id, name, actions = [], tier = 'standard' }) {
     this.id = id;
     this.name = name;
+    this.tier = tier; // standard / ultimate，提供戰報呈現使用
     this.actions = actions; // 多段動作陣列
   }
 
@@ -159,6 +160,9 @@ class Skill {
         logger.addLog({
           type: 'SKILL_TEXT',
           actorId: caster.id,
+          skillId: this.id,
+          skillTier: this.tier,
+          isNormalAttack: this === caster.normalAttack,
           // 帶上 targets 讓文字可以根據目標改變；單一目標的場合 target 也一併給
           message: composeMessage(
             action,
@@ -191,6 +195,9 @@ class Skill {
               logger.addLog({
                 type: 'MISS',
                 actorId: caster.id,
+          skillId: this.id,
+          skillTier: this.tier,
+          isNormalAttack: this === caster.normalAttack,
                 targetId: target.id,
                 message: composeMessage(
                   action,
@@ -219,6 +226,9 @@ class Skill {
             logger.addLog({
               type: 'DAMAGE',
               actorId: caster.id,
+          skillId: this.id,
+          skillTier: this.tier,
+          isNormalAttack: this === caster.normalAttack,
               targetId: target.id,
               value: damage,
               isCrit,
@@ -236,6 +246,9 @@ class Skill {
           logger.addLog({
             type: 'HEAL',
             actorId: caster.id,
+          skillId: this.id,
+          skillTier: this.tier,
+          isNormalAttack: this === caster.normalAttack,
             targetId: target.id,
             value: healAmount,
             message: composeMessage(
@@ -251,6 +264,9 @@ class Skill {
             logger.addLog({
               type: 'BUFF_APPLY',
               actorId: caster.id,
+          skillId: this.id,
+          skillTier: this.tier,
+          isNormalAttack: this === caster.normalAttack,
               targetId: target.id,
               message: composeMessage(
                 action,

@@ -21,7 +21,7 @@ class BattleEngine {
 
   // 一次性跑完戰鬥
   start() {
-    this.logger.addLog({ type: 'TEXT', message: '戰鬥開始！' });
+    this.logger.addLog({ type: 'BATTLE_START', message: '戰鬥開始！' });
 
     while (this.currentTurn <= this.maxTurns && !this.result) {
       this.executeTurn();
@@ -34,7 +34,7 @@ class BattleEngine {
       this.logger.addLog({ type: 'TEXT', message: `雙方大戰300回合，沒有分出勝負` });
     }
 
-    this.logger.addLog({ type: 'TEXT', message: `戰鬥結束，獲勝方: ${this.result}` });
+    this.logger.addLog({ type: 'BATTLE_END', message: `戰鬥結束，獲勝方: ${this.result}` });
 
     return {
       winner: this.result,
