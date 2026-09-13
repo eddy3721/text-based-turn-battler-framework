@@ -27,7 +27,10 @@ const Formulas = require('../utils/Formulas');
  * 各 type 的拼法：
  *   DAMAGE 命中   lead + (爆擊 ? crit : '') + hit      lead = 第一擊 action、連擊 combo
  *   DAMAGE 落空   lead + miss
+ *   DAMAGE 格擋   lead + block（不拼接 crit / hit）
  *   HEAL         action + heal
+ *   RESTORE_SP   action + recover
+ *   SUMMON       action + summon
  *   BUFF         action + buff
  *   TEXT         action
  *
@@ -40,11 +43,23 @@ const DefaultText = {
     combo: (ctx) => `第 ${ctx.hitIndex} 擊，`,
     crit: '會心一擊！',
     hit: (ctx) => `對 ${ctx.target.name} 造成了 ${ctx.value} 點傷害！`,
-    miss: (ctx) => `但是被 ${ctx.target.name} 躲開了！`
+    miss: (ctx) => `但是被 ${ctx.target.name} 躲開了！`,
+    block: (ctx) => ctx.value === 0
+      ? `但是被 ${ctx.target.name}${ctx.blockMethod ? ` 用${ctx.blockMethod}` : ''}擋下了！`
+      : `但是被 ${ctx.target.name}${ctx.blockMethod ? ` 用${ctx.blockMethod}` : ''}抵擋，造成了 ${ctx.value} 點傷害！`
   },
   HEAL: {
     action: (ctx) => `${ctx.caster.name} 治療，`,
     heal: (ctx) => `使 ${ctx.target.name} 回復了 ${ctx.value} 點生命！`
+  },
+  RESTORE_SP: {
+    action: (ctx) => `${ctx.caster.name} 的${ctx.skill.name}`,
+    recover: (ctx) => `使 ${ctx.target.name} 回復了 ${ctx.value} SP！`
+  },
+  // SUMMON 的 target 是剛生出來的增援實體。
+  SUMMON: {
+    action: (ctx) => `${ctx.caster.name} `,
+    summon: (ctx) => `召來了 ${ctx.target.name}！`
   },
   BUFF: {
     action: () => '',
@@ -67,6 +82,8 @@ const makeContext = (skill, caster, overrides) => ({
   targets: [],
   value: null,
   isCrit: false,
+  blocked: false,
+  blockMethod: null,
   hitIndex: 1,
   buff: null,
   skill,
@@ -88,11 +105,14 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
   const part = (p) => resolvePart(p, ctx);
 
   if (action.type === 'HEAL') return part(text.action) + part(text.heal);
+  if (action.type === 'RESTORE_SP') return part(text.action) + part(text.recover);
+  if (action.type === 'SUMMON') return part(text.action) + part(text.summon);
   if (action.type === 'BUFF') return part(text.action) + part(text.buff);
   if (action.type === 'TEXT') return part(text.action);
 
   const lead = part(isComboHit ? text.combo : text.action);
   if (!isHitLanded) return lead + part(text.miss);
+  if (ctx.blocked) return lead + part(text.block);
   return lead + (ctx.isCrit ? part(text.crit) : '') + part(text.hit);
 }
 
@@ -105,9 +125,16 @@ class Skill {
   }
 
   // 判斷是否能發動此技能 (看總體力消耗)
-  canCast(entity) {
+  canCast(entity, context) {
     const totalSpCost = this.actions.reduce((sum, action) => sum + (action.spCost || 0), 0);
-    return entity.stats.sp >= totalSpCost;
+    return entity.stats.sp >= totalSpCost && this.actions.every(action =>
+      action.type !== 'SUMMON' || context?.canSummon(entity, action));
+  }
+
+  // 增援實體由 BattleEngine 生成，日誌也在那邊寫，但文案仍走這裡的片段拼裝，
+  // 技能才能用 text.action / text.summon 或 action.message 覆寫召喚台詞。
+  summonMessage(action, caster, summoned) {
+    return composeMessage(action, makeContext(this, caster, { target: summoned, targets: [summoned] }));
   }
 
   // 選擇目標的輔助函式
@@ -134,16 +161,21 @@ class Skill {
   }
 
   // 執行技能
-  execute(caster, allies, enemies, logger) {
+  execute(caster, allies, enemies, logger, context) {
     let currentTargets = [];
 
     for (const action of this.actions) {
+      if (action.type === 'SUMMON' && !context?.canSummon(caster, action)) continue;
       // 1. 扣除該段 SP
       const cost = action.spCost || 0;
       if (caster.stats.sp < cost) {
         break; // 體力不足以執行後續段落，中斷
       }
       caster.stats.sp -= cost;
+      if (action.type === 'SUMMON') {
+        context.summon(caster, action, this);
+        continue;
+      }
 
       // 2. 決定目標 (是否延續上一段的目標)
       const inherit = action.inheritTarget !== false;
@@ -221,10 +253,11 @@ class Skill {
               damage = Math.floor(damage * Formulas.getCriticalMultiplier(caster));
             }
 
-            target.takeDamage(damage, logger);
+            const outcome = target.takeDamage(damage, logger, { caster, skill: this, action, hitIndex, hits, isCrit });
+            damage = outcome.damage;
 
             logger.addLog({
-              type: 'DAMAGE',
+              type: outcome.blocked ? 'BLOCK' : 'DAMAGE',
               actorId: caster.id,
           skillId: this.id,
           skillTier: this.tier,
@@ -232,17 +265,18 @@ class Skill {
               targetId: target.id,
               value: damage,
               isCrit,
+              blocked: outcome.blocked,
               message: composeMessage(
                 action,
-                makeContext(this, caster, { target, targets: [target], value: damage, isCrit, hitIndex }),
+                makeContext(this, caster, { target, targets: [target], value: damage, isCrit, hitIndex,
+                  blocked: outcome.blocked, blockMethod: outcome.blockMethod }),
                 { isComboHit: hits > 1 && i > 0, isHitLanded: true }
               )
             });
           }
         } 
         else if (action.type === 'HEAL') {
-          const healAmount = Math.floor(caster.stats.atk * (action.power || 1));
-          target.heal(healAmount, logger);
+          const healAmount = target.heal(Math.floor(caster.stats.atk * (action.power || 1)), logger);
           logger.addLog({
             type: 'HEAL',
             actorId: caster.id,
@@ -256,6 +290,15 @@ class Skill {
               makeContext(this, caster, { target, targets: [target], value: healAmount })
             )
           });
+        }
+        else if (action.type === 'RESTORE_SP') {
+          const value = target.restoreSp(action.amount || 0);
+          logger.addLog({ type: 'SP_RECOVER', actorId: caster.id, targetId: target.id,
+            skillId: this.id, skillTier: this.tier, isNormalAttack: this === caster.normalAttack,
+            value, message: composeMessage(
+              action,
+              makeContext(this, caster, { target, targets: [target], value })
+            ) });
         }
         else if (action.type === 'BUFF') {
           const buffs = action.buffs || [];

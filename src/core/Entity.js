@@ -1,11 +1,15 @@
 const Buff = require('./Buff');
 
 class Entity {
-  constructor({ id, name, team, stats, normalAttack, skills = [], buffs = [], passives = [] }) {
+  constructor({ id, name, team, stats, normalAttack, openingSkill = null, skills = [], buffs = [], passives = [] }) {
     this.id = id;
     this.name = name;
     this.team = team;
     this.stats = { ...stats }; // 複製一份，避免改到原始資料
+    this.stats.maxSp = stats.maxSp ?? stats.sp ?? 0;
+    this.stats.sp = stats.sp ?? 0;
+    this.openingSkill = openingSkill;
+    this.hasActed = false;
     this.normalAttack = normalAttack;
     this.skills = skills; 
     this.buffs = buffs.map(b => new Buff(b)); 
@@ -13,15 +17,36 @@ class Entity {
     this.isAlive = this.stats.hp > 0;
   }
 
-  takeDamage(amount, logger) {
-    this.stats.hp -= amount;
+  // BEFORE_DAMAGE is repeatable. Its action mutates this hit's context.damage.
+  // HP_BELOW retains its existing one-shot behavior.
+  takeDamage(amount, logger, context = {}) {
+    const result = { ...context, target: this, damage: amount, blocked: false, blockMethod: null };
+    for (const passive of [...this.passives]) {
+      if (passive.trigger !== 'BEFORE_DAMAGE') continue;
+      if (passive.enabled && !passive.enabled(this, result)) continue;
+      if (passive.action) passive.action(this, result, logger);
+    }
+    result.damage = Math.max(0, Math.floor(result.damage));
+    if (result.damage === 0) return result;
+    this.stats.hp -= result.damage;
     this.checkDeath();
     this.checkPassives('ON_HP_CHANGE', logger);
+    return result;
   }
 
   heal(amount, logger) {
+    if (!this.isAlive) return 0;
+    const before = this.stats.hp;
     this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + amount);
     this.checkPassives('ON_HP_CHANGE', logger);
+    return this.stats.hp - before;
+  }
+
+  restoreSp(amount) {
+    if (!this.isAlive) return 0;
+    const restored = Math.max(0, Math.min(this.stats.maxSp - this.stats.sp, Math.floor(amount)));
+    this.stats.sp += restored;
+    return restored;
   }
 
   checkPassives(triggerEvent, logger) {
@@ -48,6 +73,9 @@ class Entity {
   }
 
   addBuff(buffConfig) {
+    if (buffConfig.stackPolicy === 'refresh') {
+      this.buffs = this.buffs.filter(buff => buff.id !== buffConfig.id);
+    }
     this.buffs.push(new Buff(buffConfig));
   }
 

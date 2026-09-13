@@ -6,6 +6,18 @@
 
 ## 系統架構總覽
 
+### 召喚與資源恢復
+
+- `Entity.stats.maxSp` 可明確設定；省略時採初始 `sp`（兩者皆省略為 0）。`heal(amount, logger)` 與 `restoreSp(amount)` 回傳實際恢復量，不超過上限、不復活死亡單位。
+- 技能可加入 `{ type: 'RESTORE_SP', amount: 8, targetType: 'ALLY_ALL' }`，輸出 `SP_RECOVER`，包含 `actorId`、`targetId`、`value` 與技能 metadata。`HEAL` 日誌同樣使用實際恢復量。
+- `{ type: 'SUMMON', monsterId: 'goblin', maxAlive: 2, maxTotal: 4, spCost: 20 }` 由 `new BattleEngine(teamA, teamB, { summonFactory })` 處理。工廠簽章為 `(monsterId, { entityId }) => Entity`；引擎登錄陣營與 `summonerId`，每位召喚者分別計數，增援下一回合才進入行動順序。
+- `RESTORE_SP` 與 `SUMMON` 的日誌文字跟其他 action 一樣走片段拼裝：`RESTORE_SP` 是 `action + recover`，`SUMMON` 是 `action + summon`（`ctx.target` 為剛登場的增援，日誌由引擎寫出但文案仍由技能決定），`action.message` 一樣可整句覆寫。
+- 召喚可用非空 `monsterIds` 陣列取代單一 `monsterId`，每次等機率抽一個 ID。引擎保留工廠提供的原始名稱，不附加增援文字；同名單位以唯一實體 ID 區分。
+- `Skill.canCast(entity, context?)` 及 `execute(caster, allies, enemies, logger, context?)` 的可選 context 為 BattleEngine；未注入工廠或已達召喚上限時，召喚技能不可選且不消耗 SP。既有無召喚技能可照舊呼叫。
+- `Entity` 可設定 `openingSkill`。首次可行動時若可施放則使用一次，否則走一般技能抽選；暈眩不消耗首次行動機會。
+- Buff 設定 `stackPolicy: 'refresh'` 時替換同 ID 效果並重設時間；省略則維持原本可堆疊行為。時間仍以目標自己的行動槽結束時計算。
+- 引擎選項 `openingLogs` 可傳入遊戲層的開場敘事紀錄。工廠、故事、怪物資料仍由遊戲負責。
+
 整個引擎分為五個核心模組：
 
 1. **`Entity` (戰鬥實體)**
@@ -66,6 +78,14 @@ const result = engine.start();
 // result.winner 會回傳獲勝隊伍 ('TEAM_A', 'TEAM_B', 或 'DRAW')
 // result.logs 包含了整場戰鬥的所有細節
 ```
+
+建立 `BattleEngine` 時會依 `teamA`、`teamB` 的陣列順序，統一處理同場
+角色與怪物的同名問題：第一位保留原名，後續為 `桐人2`、`桐人3`，不加空格。
+敵我同名也共用編號；若 `桐人2` 本來就是其他單位的原名，會跳過該號碼以免撞名。
+框架直接更新戰鬥實體的 `name`，技能、被動與回傳的 `finalTeamA`／`finalTeamB`
+都會使用相同名稱，`id` 不變。結算文字請依 `id` 取回實體的戰鬥名稱。
+重用同一實體建立新戰鬥時，框架會從原名重新編號。呼叫端只需提供角色或怪物
+本名，不需附加玩家名稱或預先加上 A／B 後綴。
 
 ### 4. 處理戰鬥日誌 (UI 渲染)
 前端專案**最重要**的工作就是把 `result.logs` 漂漂亮亮地渲染出來。
@@ -132,3 +152,27 @@ result.logs.forEach((log, index) => {
 - **放置位置**：通常會放在 React 專案的 `src/lib/battler-engine/` 或是 `src/features/combat/` 底下。
 - **需要改名嗎？**：強烈建議**將框架原本的 `src` 資料夾改名**為 `battler-engine` 或是 `core`，以免跟 React 專案本身的 `src` 搞混。
 - 這樣引入時就會長得像：`import { BattleEngine } from '../lib/battler-engine/index';`
+# 受傷前被動
+
+Entity 支援可重複執行的 `trigger: 'BEFORE_DAMAGE'` 被動。可選的
+`enabled(self, hit)` 回傳是否啟用，`action(self, hit, logger)` 修改本擊的
+`hit.damage`。`hit` 包含 target，以及 Skill 傳入的 caster、skill、action、
+hitIndex、hits（本次攻擊總段數）、isCrit。直接呼叫 takeDamage 時，攻擊來源欄位可能不存在。
+
+格擋可設定 `hit.blocked = true` 與 `hit.blockMethod = '盾牌'`。takeDamage 回傳處理結果，
+Skill 以最終 damage 產生 BLOCK 戰報（value 為減傷後傷害）。完全格擋不觸發
+血量變動被動；後續 BUFF 動作仍獨立生效。既有 HP_BELOW 被動維持一次性觸發。
+
+格擋文字使用技能的 `text.action` / `text.combo` 前綴，加上 `text.block`。
+`block` 可為字串或 context 回呼，預設依最終傷害顯示完全格擋或部分減傷。
+被動不組裝整句。多段技能的前綴由技能自行決定，並不強制使用「第 X 擊」。
+`action.message` 仍優先於所有片段，需自行根據 `ctx.blocked`、`ctx.blockMethod`
+與 `ctx.value`（減傷後傷害）處理格擋演出；未格擋時前兩者為 false / null。
+
+```js
+text: {
+  action: '揮劍橫斬，',
+  combo: '接著反手上挑，',
+  block: ctx => `劍刃被 ${ctx.target.name} 的${ctx.blockMethod}擋住，造成 ${ctx.value} 點傷害！`
+}
+```
