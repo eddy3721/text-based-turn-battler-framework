@@ -1,5 +1,7 @@
 # 文字對戰遊戲戰鬥模組 (Text-Based Turn-Battler Framework)
 
+一般反擊、技能反擊與傷害條件效果請見 [COUNTERS.md](COUNTERS.md)。
+
 這是一個基於純 JavaScript (Framework-Agnostic) 開發的回合制戰鬥核心引擎。專為類似「我的桐人」這類型的文字掛機或對戰遊戲所設計。本系統採用**一次性結算**與**資料驅動 (Data-Driven)** 的架構，讓您可以輕鬆地套用到 React、Vue、Node.js 甚至任何前端專案中。
 
 ---
@@ -122,11 +124,9 @@ result.logs.forEach((log, index) => {
 因為目前技能的 `message` 參數使用了 Arrow Function 來做到字串格式化，如果您希望技能設定可以完全放在資料庫 (Database) 中當作純 JSON 傳輸，您會需要寫一個 Parsing 層，將 `{caster} 攻擊了 {target}` 這種字串解析成實際的文字，藉此拔除程式碼中的 Function。
 
 ### 4. 觸發器與被動系統 (`Entity.js` 的 `passives`)
-目前的系統有保留了 `ON_HP_CHANGE` 事件，用來做 Boss 的階段轉換。
-您可以繼續擴充更多事件，例如：
-- `ON_TURN_START` (回合開始時觸發回血被動)
-- `ON_DEATH` (死後觸發自爆，對全體造成傷害)
-只要在 `BattleEngine.js` 或是 `Entity.js` 中對應的時機呼叫 `checkPassives` 即可。
+`ON_HP_CHANGE` / `condition: 'HP_BELOW'` 用於一次性階段轉換，僅存活單位會觸發。
+技能傷害先寫入戰報，再執行 `action(self, logger, engine)`，可透過 engine 立即施放反擊。
+`trigger: 'AFTER_DAMAGE_DEALT'` 用於逐擊追加效果，詳見下方。
 
 ---
 
@@ -168,6 +168,61 @@ Skill 以最終 damage 產生 BLOCK 戰報（value 為減傷後傷害）。完�
 被動不組裝整句。多段技能的前綴由技能自行決定，並不強制使用「第 X 擊」。
 `action.message` 仍優先於所有片段，需自行根據 `ctx.blocked`、`ctx.blockMethod`
 與 `ctx.value`（減傷後傷害）處理格擋演出；未格擋時前兩者為 false / null。
+
+## 呼叫已註冊技能與定時效果
+
+遊戲端管理技能表，建立引擎時注入 `skillResolver: id => getSkill(id)`。框架不持有遊戲註冊表。
+
+```js
+new Skill({ id: 'random_move', actions: [
+  { type: 'CAST_SKILL', skillIds: ['dagger', 'hammer', 'spear'], spCost: 12 }
+] });
+```
+
+`CAST_SKILL` 等機率抽取一個可用技能；單一 ID 為指定施放。候選不必在施放者的 `skills` 中。
+子技能自行選目標、使用自己的文案及日誌 skillId，免 SP 且不占行動槽。
+召喚上限等非 SP 條件仍有效；無可用候選時不施放。未知 ID 或缺少解析器會報錯。
+執行與可施放檢查均阻擋同一施放者呼叫鏈中的重複技能；另一名角色仍可使用同一技能反擊。
+循環候選不會造成無窮遞迴。
+遊戲端應在註冊表完成後驗證 CAST_SKILL 與 Buff 的所有 skillIds。
+
+也可從被動呼叫 `engine.castSkill(caster, skillIds, options?)`。
+`options.targets` 可指定被呼叫技能第一個 DAMAGE 動作的目標（例如命中後對同一人爆炸）；
+後續動作沿用既有 inheritTarget 規則。一般隨機技能不要傳 targets，以使用技能原本的選人設定。
+低階 `Skill.execute(..., engine, { ignoreSp: true })` 及 `canCast(entity, engine, { ignoreSp: true })`
+使用每次執行設定，絕不改寫共用 Skill；一般呼叫不傳此設定。
+
+自我蓄力可在 BUFF 動作中設定：
+
+```js
+{ id: 'charge', trigger: 'BEFORE_ACTION', remainingTriggers: 1,
+  skillIds: ['dagger', 'hammer', 'spear'], stackPolicy: 'refresh' }
+```
+
+這類 Buff 在下一次可行動前先消耗，再呼叫技能，之後仍有正常行動；暈眩時延後。
+`trigger: 'ROUND_START', remainingTriggers: 2` 則在後續兩個全局回合開始各觸發一次，
+不受持有者行動次數影響。透過技能施加的 Buff 不會於施加當回合立即觸發 ROUND_START。
+直接施加時用 `entity.addBuff(config, engine)` 記錄當前回合。
+重複 refresh 會重新計算剩餘次數；死亡時清除定時效果。
+這類 Buff 的壽命由 remainingTriggers 控制，不讀取 duration；舊 Buff 維持行動槽計時。
+定時技能由 Buff 持有者施放，因此場地攻擊應將 Buff 附加在施放者自己身上。
+
+## 傷害後反應與台詞
+
+`AFTER_DAMAGE_DEALT` 的 `enabled(self, hit)` 與 `action(self, hit, logger, engine)`
+可讀取 `hit.caster/target/skill/isNormalAttack/damage`。僅正傷害且雙方仍存活時觸發。
+例如 enabled 檢查 isNormalAttack，再呼叫獨立爆炸技能，即可防止爆炸反覆觸發自己。
+順序為本擊戰報 → 死亡或 HP_BELOW 反應 → 存活者追加效果 → 下一擊；
+反擊殺死施放者或戰鬥結束時，剩餘動作停止。
+直接 `takeDamage(amount, logger, { engine })` 可使用共用反應與死亡結算；
+需自行先記錄傷害時，傳 `deferReactions: true`，寫完日誌再呼叫
+`target.finishDamage(outcome, logger, engine)`。DOT 已使用此流程。
+直接治療可傳 `entity.heal(amount, logger, { engine })`，讓血量被動取得引擎；
+HEAL 技能與 HOT 也會在回復日誌之後傳入引擎、檢查血量被動。
+
+Entity 可設定 `dialogues: { opening, death, victory }`（各為台詞本體字串）。
+引擎補上戰鬥名稱及引號，產生 `BOSS_DIALOGUE`；各事件只播一次，平手不播勝利台詞。
+前端自行決定這種日誌的顏色。死亡紀錄由引擎集中去重，涵蓋直接技能、DOT、派生與反擊。
 
 ```js
 text: {

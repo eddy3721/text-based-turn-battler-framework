@@ -125,10 +125,16 @@ class Skill {
   }
 
   // 判斷是否能發動此技能 (看總體力消耗)
-  canCast(entity, context) {
+  canCast(entity, context, { ignoreSp = false, callChain = [] } = {}) {
     const totalSpCost = this.actions.reduce((sum, action) => sum + (action.spCost || 0), 0);
-    return entity.stats.sp >= totalSpCost && this.actions.every(action =>
-      action.type !== 'SUMMON' || context?.canSummon(entity, action));
+    if (callChain.includes(this.id)) return false;
+    return (ignoreSp || entity.stats.sp >= totalSpCost) && this.actions.every(action => {
+      if (action.type === 'SUMMON') return context?.canSummon(entity, action);
+      if (action.type === 'CAST_SKILL') {
+        return (context?.getCastableSkills(entity, action.skillIds, [...callChain, this.id]).length || 0) > 0;
+      }
+      return true;
+    });
   }
 
   // 增援實體由 BattleEngine 生成，日誌也在那邊寫，但文案仍走這裡的片段拼裝，
@@ -161,17 +167,36 @@ class Skill {
   }
 
   // 執行技能
-  execute(caster, allies, enemies, logger, context) {
+  execute(caster, allies, enemies, logger, context, options = {}) {
+    const run = () => this._execute(caster, allies, enemies, logger, context, options);
+    return context ? context.withSkill(caster, this, run) : run();
+  }
+
+  _execute(caster, allies, enemies, logger, context, options) {
     let currentTargets = [];
+    let forcedTargets = options.targets;
+    const counterAttempts = context?.counterAttempts(caster) || new Set();
+    const damagedTargets = new Set();
+    if (context?.counterSource) {
+      const parentLogger = logger;
+      const source = { ...context.counterSource };
+      logger = { addLog: entry => parentLogger.addLog({ ...entry, isCounter: true, counterSource: source }) };
+    }
 
     for (const action of this.actions) {
+      if (!caster.isAlive || context?.result) break;
       if (action.type === 'SUMMON' && !context?.canSummon(caster, action)) continue;
       // 1. 扣除該段 SP
-      const cost = action.spCost || 0;
+      const cost = options.ignoreSp ? 0 : action.spCost || 0;
       if (caster.stats.sp < cost) {
         break; // 體力不足以執行後續段落，中斷
       }
       caster.stats.sp -= cost;
+      if (action.type === 'CAST_SKILL') {
+        if (!context) throw new Error(`CAST_SKILL in "${this.id}" requires a BattleEngine context.`);
+        context.castSkill(caster, action.skillIds);
+        continue;
+      }
       if (action.type === 'SUMMON') {
         context.summon(caster, action, this);
         continue;
@@ -179,7 +204,10 @@ class Skill {
 
       // 2. 決定目標 (是否延續上一段的目標)
       const inherit = action.inheritTarget !== false;
-      if (!inherit || currentTargets.length === 0) {
+      if (action.type === 'DAMAGE' && forcedTargets) {
+        currentTargets = forcedTargets.filter(target => target.isAlive);
+        forcedTargets = null;
+      } else if (!inherit || currentTargets.length === 0) {
         // 不延續，或是目前還沒有目標，就依照本段的 targetType 抓取
         currentTargets = this._selectTargets(action.targetType || 'ENEMY_SINGLE', caster, allies, enemies);
       }
@@ -208,28 +236,30 @@ class Skill {
       }
 
       currentTargets.forEach(target => {
-        if (!target.isAlive) return; // 若目標已死則跳過此目標
+        if (!target.isAlive || !caster.isAlive || context?.result) return;
+        if (action.requiresDamage && !damagedTargets.has(target)) return;
 
         if (action.type === 'DAMAGE') {
-          const isNormalAttack = (this === caster.normalAttack);
+          const isNormalAttack = options.basicCounter || (this === caster.normalAttack);
           let hits = action.hits || 1;
           
-          if (isNormalAttack || action.combo) {
+          if (!options.basicCounter && (isNormalAttack || action.combo)) {
             hits = Formulas.getCombos(caster, target);
           }
 
           for (let i = 0; i < hits; i++) {
-            if (!target.isAlive) break;
+            if (!target.isAlive || !caster.isAlive || context?.result) break;
 
             const hitIndex = i + 1;
 
-            if (!Formulas.isHit(caster, target, action.accuracy || 1)) {
+            // A successful counter has already won its reaction check, so its reply cannot miss.
+            if (!context?.counterSource && !Formulas.isHit(caster, target, action.accuracy || 1)) {
               logger.addLog({
                 type: 'MISS',
                 actorId: caster.id,
           skillId: this.id,
           skillTier: this.tier,
-          isNormalAttack: this === caster.normalAttack,
+          isNormalAttack,
                 targetId: target.id,
                 message: composeMessage(
                   action,
@@ -240,8 +270,12 @@ class Skill {
               continue;
             }
 
+            if (context?.tryCounter(caster, target, this, counterAttempts)) continue;
+
             const isCrit = Formulas.isCritical(caster);
-            let damage = Formulas.calculateDamage(caster, target, action.power || 1);
+            // 傷害預設依賴 atk；action.stat 可讓法術等技能改用 int 或其他能力。
+            // Formulas 會在欄位不存在時直接拋錯，避免拼錯後悄悄打成最低傷害。
+            let damage = Formulas.calculateDamage(caster, target, action.power || 1, action.stat || 'atk');
             
             // 如果是普攻或指定連擊，後續打擊傷害遞減 (預設改為 40% 懲罰，避免敏捷過強)
             if ((isNormalAttack || action.combo) && i > 0) {
@@ -253,15 +287,19 @@ class Skill {
               damage = Math.floor(damage * Formulas.getCriticalMultiplier(caster));
             }
 
-            const outcome = target.takeDamage(damage, logger, { caster, skill: this, action, hitIndex, hits, isCrit });
+            const outcome = target.takeDamage(damage, logger, {
+              caster, skill: this, action, hitIndex, hits, isCrit, isNormalAttack,
+              isCounter: !!context?.counterSource, deferReactions: true
+            });
             damage = outcome.damage;
+            if (damage > 0) damagedTargets.add(target);
 
             logger.addLog({
               type: outcome.blocked ? 'BLOCK' : 'DAMAGE',
               actorId: caster.id,
           skillId: this.id,
           skillTier: this.tier,
-          isNormalAttack: this === caster.normalAttack,
+          isNormalAttack,
               targetId: target.id,
               value: damage,
               isCrit,
@@ -273,10 +311,22 @@ class Skill {
                 { isComboHit: hits > 1 && i > 0, isHitLanded: true }
               )
             });
+            target.finishDamage(outcome, logger, context);
           }
         } 
         else if (action.type === 'HEAL') {
-          const healAmount = target.heal(Math.floor(caster.stats.atk * (action.power || 1)), logger);
+          // 回復量預設綁施放者的 atk，action.stat 可以改綁任何一項能力值
+          // （例如綁 int，讓輔助型角色的養成方向跟輸出型分開）。
+          // 拼錯字若靜默退回 atk 或回 0，會變成「這招好像沒什麼用」這種
+          // 得盯著戰報算數字才發現的問題，所以直接擋掉。
+          const statKey = action.stat || 'atk';
+          const scale = caster.stats[statKey];
+          if (typeof scale !== 'number') {
+            throw new Error(`HEAL action of skill "${this.id}" references unknown caster stat "${statKey}".`);
+          }
+          // 讀的是原始 stats 而不是生效值，所以同一次施放中前面幾段的 buff
+          // 放大不了這裡的回復量，兩段的先後順序沒有差別。
+          const healAmount = target.heal(Math.floor(scale * (action.power || 1)), logger, { deferReactions: true });
           logger.addLog({
             type: 'HEAL',
             actorId: caster.id,
@@ -290,6 +340,7 @@ class Skill {
               makeContext(this, caster, { target, targets: [target], value: healAmount })
             )
           });
+          target.checkPassives('ON_HP_CHANGE', logger, context);
         }
         else if (action.type === 'RESTORE_SP') {
           const value = target.restoreSp(action.amount || 0);
@@ -303,7 +354,7 @@ class Skill {
         else if (action.type === 'BUFF') {
           const buffs = action.buffs || [];
           buffs.forEach(buffConfig => {
-            target.addBuff(buffConfig);
+            target.addBuff(buffConfig, context);
             logger.addLog({
               type: 'BUFF_APPLY',
               actorId: caster.id,

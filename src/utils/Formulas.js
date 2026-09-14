@@ -14,7 +14,57 @@
 const statsOf = (entity) =>
   typeof entity.getEffectiveStats === 'function' ? entity.getEffectiveStats() : entity.stats;
 
+// 每回合的行動槽數 = 存活人數 × 這個倍率。
+//
+// 這顆旋鈕調的是「行動的顆粒度」，不是總行動量：倍率 2 會讓回合數大致減半
+// （實測 1v1 從 27 回合變 14），整場的總行動槽維持在 54~56 不變。
+// 所以以行動槽計時的東西——Buff 的 duration、DOT/HOT 的 onPreTurn、tickBuffs、
+// SP 預算——佔整場的比例都不受影響，調這個值不需要跟著改技能數值。
+// 真正會被影響的是綁「回合」的機制，目前只有 trigger: 'ROUND_START' 那類 Buff：
+// 它每回合觸發一次，回合數減半就等於總觸發次數減半。
+//
+// 從 1 調到 2 的實際效果是壓低變異數。倍率 1 時慢速單位有 29~38% 的機率
+// 整個回合一次都沒被抽到，倍率 2 降到 1% 以下——抽中就砍速度 3/4 的衰減有上限，
+// 快的人連抽第三、四次時權重已所剩無幾，多出來的槽會落到還沒動過的人身上。
+// 慢速單位的槽位佔比因此從 36.6% 升到 41.7%（量測腳本見 mydoujin 的 scratch/slotShare.js）。
+const ACTION_SLOTS_PER_ENTITY = 2;
+
+// 連擊門檻：速度差每累積這麼多點，連擊數的下限／上限才各加一。
+// 數字越大越難連擊，這是壓制高速角色的主要旋鈕。
+//
+// 從 40/15 調到 100/40 的理由：mydoujin 的 Lv100 玩家 spd 落在 200~500，
+// 而怪物最高只有 100，速度差常態超過 300，換算成一次普攻 8~22 連擊。
+// 連擊本身對傷害影響不大（普攻有 40% 遞減，總倍率收斂在 2.5 倍），
+// 但每一下都是一行戰報、一次命中判定、一次爆擊判定與一次反擊判定，
+// 所以真正被放大的是戰報長度與觸發型機制的觸發次數。
+const COMBO_GAP_PER_MIN_HIT = 100;
+const COMBO_GAP_PER_MAX_HIT = 40;
+
 class Formulas {
+  static luckEventProfile(actor, opponent) {
+    const gap = Math.max(0, (statsOf(opponent).luk ?? 0) - (statsOf(actor).luk ?? 0));
+    const ratio = gap / (gap + 100);
+    return { gap, ratio, purpleChance: 0.30 * ratio, redChance: 0.10 * ratio,
+      // Only probability saturates; damage grows with the luck gap, independently of HP.
+      purpleDamage: gap * 1.2,
+      redDamage: gap * 2.4 };
+  }
+
+  // Shared by normal and luck damage: vary before rounding, minimum 1.
+  static applyDamageVariance(baseDamage) {
+    return Math.max(1, Math.floor(baseDamage * (0.9 + Math.random() * 0.2)));
+  }
+
+  static rollLuckEvent(profile, roll = Math.random()) {
+    if (roll < profile.redChance) return 'RED';
+    if (roll < profile.redChance + profile.purpleChance) return 'PURPLE';
+    return null;
+  }
+
+  static isCounter(defender) {
+    const chance = Math.max(0, Math.min(1, statsOf(defender).counter || 0));
+    return chance > 0 && Math.random() < chance;
+  }
   // 決定行動順序，這裡採用基於速度的權重抽籤
   static determineActionOrder(entities) {
     const aliveEntities = [...entities].filter(e => e.isAlive);
@@ -22,8 +72,9 @@ class Formulas {
     let sum = spds.reduce((a, b) => a + b, 0);
     const order = [];
 
-    // 每個回合有 [參戰人數] 個行動槽
-    for (let i = 0; i < aliveEntities.length; i++) {
+    // 每個回合有 [參戰人數 × ACTION_SLOTS_PER_ENTITY] 個行動槽
+    const slots = aliveEntities.length * ACTION_SLOTS_PER_ENTITY;
+    for (let i = 0; i < slots; i++) {
       let roll = Math.floor(Math.random() * sum);
       for (let j = 0; j < spds.length; j++) {
         if (roll < spds[j]) {
@@ -42,8 +93,11 @@ class Formulas {
   }
 
   // 傷害公式 (使用漸進式減傷)
-  static calculateDamage(attacker, defender, skillPower = 1) {
-    const atk = statsOf(attacker).atk || 0;
+  static calculateDamage(attacker, defender, skillPower = 1, statKey = 'atk') {
+    const scale = statsOf(attacker)[statKey];
+    if (typeof scale !== 'number') {
+      throw new Error(`Damage formula references unknown attacker stat "${statKey}".`);
+    }
     // 確保防禦不小於 0 (如果未來有破甲負防禦機制，可以修改這裡)
     const def = Math.max(0, statsOf(defender).def || 0);
     
@@ -53,21 +107,19 @@ class Formulas {
     // 減傷乘數
     const damageMultiplier = EHP_C / (def + EHP_C);
 
-    // 基礎傷害 = (攻擊力 * 技能倍率) * 減傷乘數
-    let baseDamage = atk * skillPower * damageMultiplier;
+    // 基礎傷害 = (指定攻擊能力 * 技能倍率) * 減傷乘數。
+    // 預設仍是 atk；法術等技能可明確指定 int，不影響既有技能。
+    const baseDamage = scale * skillPower * damageMultiplier;
     
     // 加入 ±10% 的隨機浮動 (0.9 ~ 1.1)
-    const variance = 0.9 + (Math.random() * 0.2);
-    baseDamage = baseDamage * variance;
-    
-    return Math.max(1, Math.floor(baseDamage)); // 確保最低造成 1 點傷害
+    return Formulas.applyDamageVariance(baseDamage);
   }
 
   // 計算連擊次數 (根據速度差)
   static getCombos(attacker, defender) {
     const gap = Math.max(0, statsOf(attacker).spd - statsOf(defender).spd);
-    const minC = Math.max(1, Math.ceil(gap / 40));
-    const maxC = Math.max(1, Math.ceil(gap / 15));
+    const minC = Math.max(1, Math.ceil(gap / COMBO_GAP_PER_MIN_HIT));
+    const maxC = Math.max(1, Math.ceil(gap / COMBO_GAP_PER_MAX_HIT));
     return Math.floor(Math.random() * (maxC - minC + 1)) + minC;
   }
 
