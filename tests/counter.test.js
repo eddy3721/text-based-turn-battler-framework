@@ -3,12 +3,15 @@ const assert = require('node:assert/strict');
 const { Entity, Skill, BattleEngine, Formulas } = require('../src');
 
 const strike = (actions = [{ type: 'DAMAGE', hits: 3 }]) => new Skill({ id: 'strike', name: '斬擊', actions });
+// 反擊率有上限（見 Formulas 的 COUNTER_CEILING），點數再高也不可能必定反擊，
+// 所以「反擊發生之後會怎樣」的測試一律直接壓住判定；曲線本身另外測。
 function setup(t, attack = strike()) {
   t.mock.method(Formulas, 'isHit', () => true);
   t.mock.method(Formulas, 'isCritical', () => false);
   t.mock.method(Formulas, 'calculateDamage', () => 10);
+  t.mock.method(Formulas, 'isCounter', () => true);
   const make = (id, team) => new Entity({ id, name: id, team,
-    stats: { hp: 100, maxHp: 100, sp: 30, atk: 10, spd: 1000, counter: 1 }, normalAttack: strike() });
+    stats: { hp: 100, maxHp: 100, sp: 30, atk: 10, spd: 1000, counter: 100 }, normalAttack: strike() });
   const a = make('a', 'A'); const b = make('b', 'B');
   const engine = new BattleEngine([a], [b]);
   const run = () => attack.execute(a, [a], [b], engine.logger, engine);
@@ -71,17 +74,33 @@ test('lethal reply cancels remaining attack and settles death once', t => {
   assert.equal(engine.logger.logs.filter(l => l.type === 'DEATH').length, 1);
 });
 
-test('stun prevents counter; absent stat defaults to zero; direct/DOT damage never rolls', t => {
+// 判定必成功都還擋得住，才證明這兩條是硬性前置條件而不是機率問題。
+test('stun prevents counter and direct/DOT damage never rolls, even when the roll would succeed', t => {
   const { a, b, engine, run } = setup(t);
   b.addBuff({ id: 'stun', type: 'STUN', duration: 2 });
   run();
   assert.equal(b.stats.hp, 70);
-  b.buffs = []; delete b.stats.counter;
-  run();
-  b.stats.counter = 1;
+  assert.equal(a.stats.hp, 100);
+  b.buffs = [];
   b.takeDamage(10, engine.logger, { engine });
   assert.equal(a.stats.hp, 100);
-  assert.equal(b.stats.hp, 30);
+  assert.equal(b.stats.hp, 60);
+});
+
+test('counter chance rides the technique gap and never truncates the weaker side to zero', () => {
+  const ceiling = Formulas.counterChance({ stats: { counter: 0 } }, { stats: { counter: 1e9 } });
+  const at = (defender, attacker) => Formulas.counterChance({ stats: { counter: attacker } }, { stats: { counter: defender } });
+  assert.equal(at(100, 100), ceiling / 2, '技巧相同 → 上限的一半');
+  assert.equal(at(400, 400), ceiling / 2, '只看差值，絕對值高低不影響');
+  // 技巧輸人仍然打得出反擊，只是機率低——這正是不用 max(0, 差值) 的理由。
+  assert.ok(at(100, 200) > 0 && at(100, 200) < ceiling / 2);
+  assert.ok(at(100, 400) > 0 && at(100, 400) < at(100, 200), '差距越大越低，但不歸零');
+  assert.ok(at(200, 100) > ceiling / 2 && at(200, 100) < ceiling, '技巧壓過對手 → 高於一半、不超過上限');
+  // 同樣差 100 點，兩邊一起變強也不改變結果。
+  assert.equal(at(200, 100), at(500, 400));
+  // 0 點是「不參與反擊」的開關，不是「技巧最低」。
+  assert.equal(Formulas.counterChance({ stats: {} }, { stats: {} }), 0);
+  assert.equal(Formulas.counterChance({ stats: { counter: 1e9 } }, { stats: {} }), 0);
 });
 
 test('skill reply pays SP, applies damage-gated effects, and falls back without SP', t => {

@@ -40,6 +40,26 @@ const ACTION_SLOTS_PER_ENTITY = 2;
 const COMBO_GAP_PER_MIN_HIT = 100;
 const COMBO_GAP_PER_MAX_HIT = 40;
 
+/**
+ * 反擊：`stats.counter` 是「反擊點數」，不是機率。
+ *
+ * 機率只看攻守雙方的點數差，跟幸運事件看 luk 差、連擊看 spd 差同型；點數怎麼從
+ * 遊戲的能力值換算由遊戲層決定（對照 hit / eva 的作法），框架只負責這條曲線。
+ *
+ * 曲線是 S 型而不是 max(0, 差值)：落後的一方機率遞減但不歸零，技巧輸人只是
+ * 比較難反擊，不是完全反擊不了。截斷成零的版本會讓「數值較低的那一側」整個
+ * 失去這個機制——在 mydoujin 就是所有 Boss 的反擊招牌技全部變成死內容。
+ *
+ *   點數相同      → 上限的一半
+ *   落後 GAP_SCALE → 約上限的 27%
+ *   領先 GAP_SCALE → 約上限的 73%
+ *
+ * GAP_SCALE 決定技巧差多敏感（越小越懸殊），CEILING 是機率上限：反擊必定命中
+ * 又會跳過原本那一擊的傷害，逼近 100% 等於高點數單位完全免疫低點數單位。
+ */
+const COUNTER_CEILING = 0.3;
+const COUNTER_GAP_SCALE = 50;
+
 class Formulas {
   static luckEventProfile(actor, opponent) {
     const gap = Math.max(0, (statsOf(opponent).luk ?? 0) - (statsOf(actor).luk ?? 0));
@@ -61,8 +81,17 @@ class Formulas {
     return null;
   }
 
-  static isCounter(defender) {
-    const chance = Math.max(0, Math.min(1, statsOf(defender).counter || 0));
+  static counterChance(attacker, defender) {
+    // 0 點視為「這個單位不參與反擊」，而不是「技巧最低的單位」——
+    // 沒設定過 counter 的實體（多數召喚物、測試樁）不該因為差值曲線憑空獲得反擊。
+    const points = statsOf(defender).counter || 0;
+    if (points <= 0) return 0;
+    const gap = points - (statsOf(attacker).counter || 0);
+    return COUNTER_CEILING / (1 + Math.exp(-gap / COUNTER_GAP_SCALE));
+  }
+
+  static isCounter(attacker, defender) {
+    const chance = Formulas.counterChance(attacker, defender);
     return chance > 0 && Math.random() < chance;
   }
   // 決定行動順序，這裡採用基於速度的權重抽籤

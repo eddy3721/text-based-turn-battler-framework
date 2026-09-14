@@ -62,7 +62,7 @@ class BattleEngine {
 
   tryCounter(caster, target, skill, { action, hitIndex = 1, isComboHit = false } = {}) {
     if (this.counterSource || this.result || !caster.isAlive || !target.canAct()) return false;
-    if (!Formulas.isCounter(target)) return false;
+    if (!Formulas.isCounter(caster, target)) return false;
     const callChain = this.skillCallStack.filter(call => call.caster === target).map(call => call.skillId);
     const reply = target.counterSkill?.canCast(target, this, { callChain }) ? target.counterSkill : basicCounter;
     const source = { actorId: target.id, targetId: caster.id, incomingSkillId: skill.id };

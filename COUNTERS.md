@@ -1,7 +1,17 @@
 # 反擊
 
-`Entity` 接受可選的 `counterSkill: Skill`；`stats.counter` 為 0–1 機率，省略為零。
-遊戲層負責從技巧換算，框架只讀 `getEffectiveStats().counter`。
+`Entity` 接受可選的 `counterSkill: Skill`；`stats.counter` 是**反擊點數**（不是機率），
+省略為零。遊戲層負責從自己的能力值換算成點數，框架只讀 `getEffectiveStats().counter`。
+
+機率由攻守雙方的點數差決定，跟幸運事件看 luk 差、連擊看 spd 差同型：
+
+    gap    = max(0, 守方counter − 攻方counter)
+    chance = COUNTER_CEILING × gap / (gap + COUNTER_GAP_SATURATION)
+
+所以點數相同或被對方壓過就完全不會反擊，壓制對方才有機會，且只有機率飽和、
+差值不飽和。上限存在是因為反擊必定命中又會跳過原本那一擊的傷害，逼近 100%
+等於高點數單位對低點數單位完全免疫。`Formulas.counterChance(attacker, defender)`
+可單獨取用這條曲線。
 
 透過 `BattleEngine` 執行技能時，**每一個命中的 DAMAGE 擊各自判定一次反擊**：
 多段技能有幾擊就有幾次機會，速度連擊亦同。未命中不判定，失敗的擊不影響後續擊。
