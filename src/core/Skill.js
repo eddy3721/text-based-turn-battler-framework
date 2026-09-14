@@ -175,7 +175,6 @@ class Skill {
   _execute(caster, allies, enemies, logger, context, options) {
     let currentTargets = [];
     let forcedTargets = options.targets;
-    const counterAttempts = context?.counterAttempts(caster) || new Set();
     const damagedTargets = new Set();
     if (context?.counterSource) {
       const parentLogger = logger;
@@ -270,7 +269,9 @@ class Skill {
               continue;
             }
 
-            if (context?.tryCounter(caster, target, this, counterAttempts)) continue;
+            // 每一擊各自判定：多段技能挨的刀多，給對手的機會就該多。
+            if (context?.tryCounter(caster, target, this,
+              { action, hitIndex, isComboHit: hits > 1 && i > 0 })) continue;
 
             const isCrit = Formulas.isCritical(caster);
             // 傷害預設依賴 atk；action.stat 可讓法術等技能改用 int 或其他能力。
@@ -373,5 +374,21 @@ class Skill {
     }
   }
 }
+
+/**
+ * 只拼出 DAMAGE 那行的開頭（lead），給 BattleEngine 組反擊訊息用。
+ *
+ * 反擊取代的是「原本該擊的傷害行」，所以 COUNTER 的開頭必須跟那行一字不差：
+ * 單段技能的開頭是「A 使出了 技能名，」，濃縮成一行剛好；多段技能的開頭是
+ * 「第 N 擊，」，技能名早就由前面那行獨立宣告過了。引擎自己造句的話，多段技能
+ * 就會宣告一次、反擊再複述一次。
+ */
+Skill.composeLead = function (skill, action, caster, target, { hitIndex = 1, isComboHit = false } = {}) {
+  // 整句覆寫的技能沒有可用的片段，退回敘述式開頭。
+  if (action.message) return `${caster.name} 使出了 ${skill.name}，`;
+  const text = { ...DefaultText[action.type], ...(action.text || {}) };
+  const ctx = makeContext(skill, caster, { target, targets: [target], hitIndex });
+  return resolvePart(isComboHit ? text.combo : text.action, ctx);
+};
 
 module.exports = Skill;

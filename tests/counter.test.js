@@ -15,29 +15,49 @@ function setup(t, attack = strike()) {
   return { a, b, engine, run };
 }
 
-test('one full parry per move, immediate single reply, remaining hits continue without recursion or buff ticks', t => {
+test('every landed hit rolls its own parry, each replying immediately without recursion or buff ticks', t => {
   const { a, b, engine, run } = setup(t);
   b.addBuff({ id: 'test', type: 'STAT', duration: 2 });
   run();
-  assert.equal(a.stats.hp, 90);
-  assert.equal(b.stats.hp, 80);
+  // counter=1：三擊全被招架，攻擊方一點傷害都打不出去，自己挨三下還擊。
+  assert.equal(a.stats.hp, 70);
+  assert.equal(b.stats.hp, 100);
   assert.equal(b.stats.sp, 30);
   assert.equal(b.buffs[0].duration, 2);
   assert.equal(b.hasActed, false);
-  assert.deepEqual(engine.logger.logs.map(l => l.type), ['COUNTER', 'DAMAGE', 'DAMAGE']);
+  assert.deepEqual(engine.logger.logs.map(l => l.type), ['COUNTER', 'COUNTER', 'COUNTER']);
   assert.equal(engine.logger.logs[0].value, 10);
   assert.equal(engine.logger.logs[0].isNormalAttack, true);
-  assert.equal(engine.logger.logs[0].message, 'a使出了 斬擊，但是遭b反擊，受到 10 點傷害！');
+  // 開頭沿用被反制那一擊的文案：斬擊沒有自訂 text，用的是 DAMAGE 的預設開頭。
+  assert.equal(engine.logger.logs[0].message, 'a 攻擊，但是遭b反擊，受到 10 點傷害！');
+  assert.equal(engine.logger.logs[1].message, '第 2 擊，但是遭b反擊，受到 10 點傷害！');
 });
 
-test('failed roll is not retried in later actions of the same move; misses defer the first roll', t => {
+test('the counter line reuses the parried hit own lead instead of restating the skill', t => {
+  // 多段技能通常會先獨立宣告一次技能名，之後每擊只印「第 N 擊，」。
+  // 反擊取代的是其中一擊，所以不能再複述一次技能名。
+  const announced = new Skill({ id: 'strike', name: '斬擊', actions: [{
+    type: 'DAMAGE', hits: 2,
+    text: { action: ctx => `${ctx.caster.name} 使出了 ${ctx.skill.name}，`, combo: ctx => `第 ${ctx.hitIndex} 擊，` }
+  }] });
+  const { engine, run } = setup(t, announced);
+  let rolls = 0;
+  t.mock.method(Formulas, 'isCounter', () => ++rolls === 2);
+  run();
+  const counter = engine.logger.logs.find(l => l.type === 'COUNTER');
+  assert.equal(counter.message, '第 2 擊，但是遭b反擊，受到 10 點傷害！');
+  assert.doesNotMatch(counter.message, /使出了/);
+});
+
+test('a miss never consumes a roll; every other hit rolls once and a failed roll does not block later hits', t => {
   const attack = strike([{ type: 'DAMAGE' }, { type: 'DAMAGE', hits: 3 }]);
   const { b, engine, run } = setup(t, attack);
   let hit = 0; let rolls = 0;
   t.mock.method(Formulas, 'isHit', () => ++hit !== 1);
   t.mock.method(Formulas, 'isCounter', () => { rolls++; return false; });
   run();
-  assert.equal(rolls, 1);
+  // 四擊，第一擊落空不判定，其餘三擊各判定一次。
+  assert.equal(rolls, 3);
   assert.equal(b.stats.hp, 70);
   assert.equal(engine.logger.logs[0].type, 'MISS');
 });
@@ -97,17 +117,18 @@ test('counter reply cannot miss, but can be blocked or crit; parried damage does
   assert.match(engine.logger.logs.at(-1).message, /會心一擊！受到 15 點傷害/);
 });
 
-test('AoE independently permits one counter from each living target', t => {
+test('AoE lets every living target roll on every hit it receives', t => {
   const attack = strike([{ type: 'DAMAGE', targetType: 'ENEMY_ALL', hits: 2 }]);
   const { a, b, engine } = setup(t, attack);
   const c = new Entity({ id: 'c', name: 'c', team: 'B', stats: { ...b.stats } });
   engine.teamB.push(c);
   attack.execute(a, [a], [b, c], engine.logger, engine);
-  assert.equal(a.stats.hp, 80); assert.equal(b.stats.hp, 90); assert.equal(c.stats.hp, 90);
-  assert.equal(engine.logger.logs.filter(l => l.type === 'COUNTER').length, 2);
+  // 兩個目標 × 兩擊 = 四次招架，兩人都毫髮無傷。
+  assert.equal(a.stats.hp, 60); assert.equal(b.stats.hp, 100); assert.equal(c.stats.hp, 100);
+  assert.equal(engine.logger.logs.filter(l => l.type === 'COUNTER').length, 4);
 });
 
-test('nested skills share attempts and counter-derived skills cannot counter recursively', t => {
+test('each nested cast rolls separately, but counter-derived skills still cannot counter recursively', t => {
   const child = strike([{ type: 'DAMAGE' }]);
   const wrapper = new Skill({ id: 'wrapper', actions: [{ type: 'CAST_SKILL', skillIds: ['strike'] },
     { type: 'CAST_SKILL', skillIds: ['strike'] }] });
@@ -116,8 +137,10 @@ test('nested skills share attempts and counter-derived skills cannot counter rec
   b.passives = [{ trigger: 'AFTER_DAMAGE_DEALT', enabled: (self, hit) => hit.skill.id === 'basic_counter',
     action: (self, hit, logger, ctx) => ctx.castSkill(self, ['strike'], { targets: [hit.target] }) }];
   wrapper.execute(a, [a], [b], engine.logger, engine);
-  assert.equal(a.stats.hp, 80); assert.equal(b.stats.hp, 90);
-  assert.equal(engine.logger.logs.filter(l => l.type === 'COUNTER').length, 1);
+  // 兩次 CAST_SKILL 是兩擊，各自判定，所以兩次都被招架。
+  assert.equal(a.stats.hp, 60); assert.equal(b.stats.hp, 100);
+  assert.equal(engine.logger.logs.filter(l => l.type === 'COUNTER').length, 2);
+  // 還擊本身 10 點，加上被動追打的 10 點，都併進同一條 COUNTER。
   assert.equal(engine.logger.logs.find(l => l.type === 'COUNTER').value, 20);
   assert.equal(engine.logger.logs.filter(l => l.isCounter && l.type === 'DAMAGE').length, 0);
   assert.equal(engine.counterSource, null);

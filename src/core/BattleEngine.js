@@ -60,16 +60,8 @@ class BattleEngine {
     finally { this.skillCallStack.pop(); }
   }
 
-  // Share attempts across nested CAST_SKILL calls belonging to one incoming move.
-  counterAttempts(caster) {
-    const root = this.skillCallStack.find(call => call.caster === caster);
-    if (!root) return new Set();
-    return root.counterAttempts ||= new Set();
-  }
-
-  tryCounter(caster, target, skill, attempted) {
-    if (this.counterSource || this.result || !caster.isAlive || !target.canAct() || attempted.has(target)) return false;
-    attempted.add(target);
+  tryCounter(caster, target, skill, { action, hitIndex = 1, isComboHit = false } = {}) {
+    if (this.counterSource || this.result || !caster.isAlive || !target.canAct()) return false;
     if (!Formulas.isCounter(target)) return false;
     const callChain = this.skillCallStack.filter(call => call.caster === target).map(call => call.skillId);
     const reply = target.counterSkill?.canCast(target, this, { callChain }) ? target.counterSkill : basicCounter;
@@ -97,9 +89,8 @@ class BattleEngine {
     const value = replyHits.reduce((sum, log) => sum + (log.value || 0), 0);
     const isCrit = replyHits.some(log => log.isCrit && (log.value || 0) > 0);
     const counterBy = `${target.name}${reply === basicCounter ? '' : `以${reply.name}`}`;
-    const incoming = skill === caster.normalAttack
-      ? `${caster.name}攻擊`
-      : `${caster.name}使出了 ${skill.name}`;
+    // 開頭沿用被反制那一擊自己的文案，單段是「A 使出了 X，」、多段是「第 N 擊，」。
+    const incoming = Skill.composeLead(skill, action, caster, target, { hitIndex, isComboHit });
     let resultText;
     if (value > 0) resultText = `${isCrit ? '會心一擊！' : ''}受到 ${value} 點傷害！`;
     else if (replyHits.some(log => log.type === 'BLOCK')) resultText = `反擊被${caster.name}擋下了！`;
@@ -108,7 +99,7 @@ class BattleEngine {
     battleLogger.addLog({ type: 'COUNTER', actorId: target.id, targetId: caster.id,
       skillId: reply.id, skillTier: reply.tier, isNormalAttack: reply === basicCounter,
       incomingSkillId: skill.id, value, isCrit,
-      message: `${incoming}，但是遭${counterBy}反擊，${resultText}` });
+      message: `${incoming}但是遭${counterBy}反擊，${resultText}` });
     // The reply's damage is represented by the COUNTER line. Keep status, death and dialogue logs.
     buffered.filter(log => !replyHits.includes(log) && log.type !== 'SKILL_TEXT')
       .forEach(log => battleLogger.addLog(log));
