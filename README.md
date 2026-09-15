@@ -15,6 +15,8 @@
 - `{ type: 'SUMMON', monsterId: 'goblin', maxAlive: 2, maxTotal: 4, spCost: 20 }` 由 `new BattleEngine(teamA, teamB, { summonFactory })` 處理。工廠簽章為 `(monsterId, { entityId }) => Entity`；引擎登錄陣營與 `summonerId`，每位召喚者分別計數，增援下一回合才進入行動順序。
 - `RESTORE_SP` 與 `SUMMON` 的日誌文字跟其他 action 一樣走片段拼裝：`RESTORE_SP` 是 `action + recover`，`SUMMON` 是 `action + summon`（`ctx.target` 為剛登場的增援，日誌由引擎寫出但文案仍由技能決定），`action.message` 一樣可整句覆寫。
 - 召喚可用非空 `monsterIds` 陣列取代單一 `monsterId`，每次等機率抽一個 ID。引擎保留工廠提供的原始名稱，不附加增援文字；同名單位以唯一實體 ID 區分。
+- 增援預設加入召喚者的陣營（工廠自己填的 `team` 會被蓋掉）。工廠可在回傳的實體上標 `summonHostile: true`，讓它改站到**對面**——召喚不保證是幫手（儀式失控、信號引來入侵者）。`summonerId` 照樣記錄，`maxAlive` 掃兩邊陣營，敵對增援一樣佔名額。文案可讀 `ctx.hostile` 分支。
+- 工廠回傳 `null`／`undefined` 代表「這次沒有可用的增援」（素材耗盡、牢籠已空、放下的印記沒人回應）。引擎不新增實體，改寫出 `SUMMON_FAILED`，文案走 `SUMMON` 的 `action + fail` 片段（預設「X 沒有得到任何回應。」），亦可用 `action.failMessage` 整句覆寫；此時 `ctx.target` 為 null。**失敗一樣計入 `maxTotal`**——計的是嘗試而非成功，否則招不到人的技能會在之後每個行動槽重試並洗版。
 - `Skill.canCast(entity, context?)` 及 `execute(caster, allies, enemies, logger, context?)` 的可選 context 為 BattleEngine；未注入工廠或已達召喚上限時，召喚技能不可選且不消耗 SP。既有無召喚技能可照舊呼叫。
 - `Entity` 可設定 `openingSkill`。首次可行動時若可施放則使用一次，否則走一般技能抽選；暈眩不消耗首次行動機會。
 - Buff 設定 `stackPolicy: 'refresh'` 時替換同 ID 效果並重設時間；省略則維持原本可堆疊行為。時間仍以目標自己的行動槽結束時計算。

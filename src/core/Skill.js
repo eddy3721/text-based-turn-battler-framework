@@ -68,9 +68,11 @@ const DefaultText = {
     recover: (ctx) => `使 ${ctx.target.name} 回復了 ${ctx.value} SP！`
   },
   // SUMMON 的 target 是剛生出來的增援實體。
+  // fail 是工廠沒有可用增援時的後半段，此時 target 為 null。
   SUMMON: {
     action: (ctx) => `${ctx.caster.name} `,
-    summon: (ctx) => `召來了 ${ctx.target.name}！`
+    summon: (ctx) => `召來了 ${ctx.target.name}！`,
+    fail: () => '沒有得到任何回應。'
   },
   BUFF: {
     action: () => '',
@@ -96,6 +98,8 @@ const makeContext = (skill, caster, overrides) => ({
   blocked: false,
   blockMethod: null,
   evadeMethod: null,
+  // 僅 SUMMON：這次招來的是不是站在對面的敵對增援。
+  hostile: false,
   hitIndex: 1,
   buff: null,
   skill,
@@ -165,7 +169,18 @@ class Skill {
   // 增援實體由 BattleEngine 生成，日誌也在那邊寫，但文案仍走這裡的片段拼裝，
   // 技能才能用 text.action / text.summon 或 action.message 覆寫召喚台詞。
   summonMessage(action, caster, summoned) {
-    return composeMessage(action, makeContext(this, caster, { target: summoned, targets: [summoned] }));
+    return composeMessage(action, makeContext(this, caster,
+      { target: summoned, targets: [summoned], hostile: summoned.summonHostile === true }));
+  }
+
+  // 工廠沒有可用增援時的那一行。沿用 SUMMON 的 action 前綴，只換後半段，
+  // 這樣「X 召來了 Y！」與「X 沒有得到任何回應。」共用同一個開頭。
+  // 目標不存在，所以 ctx.target 是 null——text.fail 不該去讀它。
+  summonFailMessage(action, caster) {
+    const ctx = makeContext(this, caster, {});
+    if (action.failMessage) return action.failMessage(ctx);
+    const text = { ...DefaultText.SUMMON, ...(action.text || {}) };
+    return resolvePart(text.action, ctx) + resolvePart(text.fail, ctx);
   }
 
   // 選擇目標的輔助函式

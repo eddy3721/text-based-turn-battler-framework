@@ -186,10 +186,13 @@ class BattleEngine {
   }
 
   canSummon(caster, action) {
-    const team = caster.team === 'A' ? this.teamA : this.teamB;
+    // maxAlive 掃兩邊陣營：敵對的增援（summonHostile）站在對面，只看自己這隊會漏算，
+    // 變成「召出來的是敵人就不佔名額」。
+    const summoned = [...this.teamA, ...this.teamB]
+      .filter(e => e.isAlive && e.summonerId === caster.id).length;
     return caster.isAlive && typeof this.summonFactory === 'function' &&
       (this.summonCounts.get(caster.id) || 0) < (action.maxTotal ?? 4) &&
-      team.filter(e => e.isAlive && e.summonerId === caster.id).length < (action.maxAlive ?? 2);
+      summoned < (action.maxAlive ?? 2);
   }
 
   summon(caster, action, skill) {
@@ -200,11 +203,27 @@ class BattleEngine {
     const pool = action.monsterIds;
     const monsterId = pool?.length ? pool[Math.floor(Math.random() * pool.length)] : action.monsterId;
     const entity = this.summonFactory(monsterId, { entityId: id });
-    entity.team = caster.team;
-    entity.summonerId = caster.id;
+    // 計數的是「嘗試」而不是「成功」：招不到人也用掉了這次機會。
+    // 只算成功的話，maxTotal 就從「一場只能召喚一次」變成「一場只能成功一次」，
+    // 招不到人的技能會在之後每個行動槽重試並把戰報洗滿失敗訊息。
     const count = (this.summonCounts.get(caster.id) || 0) + 1;
     this.summonCounts.set(caster.id, count);
-    (caster.team === 'A' ? this.teamA : this.teamB).push(entity);
+    // 工廠回傳 null／undefined 代表「這次沒有可用的增援」——素材耗盡、
+    // 牢籠已空、放下的印記沒人回應。這是遊戲層才知道的事，框架只負責不要炸掉，
+    // 並讓技能用 text.fail 決定這一行怎麼寫。
+    if (!entity) {
+      this.logger.addLog({ type: 'SUMMON_FAILED', actorId: caster.id,
+        skillId: skill.id, skillTier: skill.tier, isNormalAttack: false,
+        message: skill.summonFailMessage(action, caster) });
+      return;
+    }
+    // 增援預設加入召喚者的陣營，但工廠可以把實體標成 summonHostile 讓它站到對面。
+    // 召喚不保證是幫手——儀式失控、信號引來了入侵者、牢籠裡放出來的東西不認主人。
+    // summonerId 照樣記，敵對的增援也追得回是誰招來的。
+    const hostile = entity.summonHostile === true;
+    entity.team = hostile ? (caster.team === 'A' ? 'B' : 'A') : caster.team;
+    entity.summonerId = caster.id;
+    (entity.team === 'A' ? this.teamA : this.teamB).push(entity);
     this.logger.addLog({ type: 'SUMMON', actorId: caster.id, targetId: id,
       skillId: skill.id, isNormalAttack: false,
       message: skill.summonMessage(action, caster, entity) });
