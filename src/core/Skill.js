@@ -129,7 +129,12 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
 }
 
 class Skill {
-  constructor({ id, name, actions = [], tier = 'standard' }) {
+  constructor({ id, name, actions = [], tier = 'standard', counterStyle = 'summary' }) {
+    // 打錯字若安靜地退回 summary，就只會看到「反擊怎麼沒照我寫的演出」，
+    // 而那跟「這場剛好沒反擊」在戰報上長得一樣。
+    if (!['summary', 'detailed'].includes(counterStyle)) {
+      throw new Error(`Skill "${id}" has unknown counterStyle "${counterStyle}".`);
+    }
     for (const action of actions) {
       if (action.partDamageMultiplier !== undefined &&
           (action.type !== 'DAMAGE' || !Number.isFinite(action.partDamageMultiplier) || action.partDamageMultiplier < 0)) {
@@ -139,6 +144,8 @@ class Skill {
     this.id = id;
     this.name = name;
     this.tier = tier; // standard / ultimate，提供戰報呈現使用
+    // 這招被當成 counterSkill 時的戰報呈現方式，見 COUNTERS.md。
+    this.counterStyle = counterStyle;
     this.actions = actions; // 多段動作陣列
   }
 

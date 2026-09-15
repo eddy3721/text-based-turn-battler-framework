@@ -91,6 +91,12 @@ class BattleEngine {
     const counterBy = `${target.name}${reply === basicCounter ? '' : `以${reply.name}`}`;
     // 開頭沿用被反制那一擊自己的文案，單段是「A 使出了 X，」、多段是「第 N 擊，」。
     const incoming = Skill.composeLead(skill, action, caster, target, { hitIndex, isComboHit });
+    // 反擊技能可以宣告 counterStyle: 'detailed' 換掉呈現方式（見 COUNTERS.md）：
+    // 濃縮版把結果塞進 COUNTER 那一句，還擊自己的傷害行會被丟掉；詳細版只讓
+    // COUNTER 宣告「被反擊了」，接著原封不動放行還擊自己的文案。
+    // 預設仍是濃縮：一般還擊沒有自訂文案，放行只會得到「X 攻擊，造成 N 點傷害！」
+    // 這種與上一行重複的廢話。有自己演出的招式才值得多佔一行。
+    const detailed = reply.counterStyle === 'detailed';
     let resultText;
     if (value > 0) resultText = `${isCrit ? '會心一擊！' : ''}受到 ${value} 點傷害！`;
     else if (replyHits.some(log => log.type === 'BLOCK')) resultText = `反擊被${caster.name}擋下了！`;
@@ -102,9 +108,11 @@ class BattleEngine {
       ...(replyHits.some(log => log.partId) ? { partHits: replyHits.filter(log => log.partId).map(log => ({
         partId: log.partId, partName: log.partName, partDamage: log.partDamage, actualDamage: log.actualDamage
       })) } : {}),
-      message: `${incoming}但是遭${counterBy}反擊，${resultText}` });
+      // 詳細版的 value／isCrit 仍然照舊寫進紀錄，換掉的只有句子——
+      // 統計與 UI 讀的是欄位，不該因為換了呈現方式就少一筆數字。
+      message: `${incoming}但是遭${counterBy}反擊${detailed ? '！' : `，${resultText}`}` });
     // The reply's damage is represented by the COUNTER line. Keep status, death and dialogue logs.
-    buffered.filter(log => !replyHits.includes(log) && log.type !== 'SKILL_TEXT')
+    (detailed ? buffered : buffered.filter(log => !replyHits.includes(log) && log.type !== 'SKILL_TEXT'))
       .forEach(log => battleLogger.addLog(log));
     return true;
   }
