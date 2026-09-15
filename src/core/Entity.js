@@ -51,6 +51,28 @@ class Entity {
     return result;
   }
 
+  // 閃避風格：命中判定失敗時，讓防守方決定「這次是怎麼躲掉的」。
+  //
+  // 這條路跟 BEFORE_DAMAGE／blockMethod 是對稱的一對：那邊是「擋下」（攻擊命中了，
+  // 傷害被防守方吃掉），這邊是「躲開」（攻擊根本沒碰到）。兩者原本只有前者能由
+  // 防守方描述——因為落空發生在 takeDamage 之前，連 hit 物件都還沒有，戰報只能印
+  // 攻擊方 action.text.miss 那句通用的「但是被 X 躲開了！」。結果是任何「我有自己的
+  // 閃避方式」的單位（翻滾、分裂、殘影、瞬移）都只能靠遊戲層事後改寫字串，
+  // 而那種改寫看不到戰鬥狀態，只能用日誌裡的標記硬猜視窗的起訖。
+  //
+  // evadeMethod 是片段，交給預設文案拼成「但是被 X 用某某躲開了！」，跟 blockMethod
+  // 完全同型；evadeMessage 是整句覆寫，留給拼不出來的演出（例如身體散開飄在空中）。
+  // 兩個都不設就維持原本的預設句，既有單位的戰報一字不變。
+  resolveEvasion(context = {}) {
+    const evasion = { ...context, target: this, evadeMethod: null, evadeMessage: null };
+    for (const passive of [...this.passives]) {
+      if (passive.trigger !== 'ON_EVADE') continue;
+      if (passive.enabled && !passive.enabled(this, evasion)) continue;
+      passive.action?.(this, evasion);
+    }
+    return evasion;
+  }
+
   // Skill records the triggering hit first; direct damage callers settle immediately.
   finishDamage(hit, logger, engine) {
     if (this.settledDamage.has(hit)) return;

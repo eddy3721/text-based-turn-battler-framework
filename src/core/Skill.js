@@ -36,6 +36,13 @@ const Formulas = require('../utils/Formulas');
  *
  * 只覆寫想改的片段即可，其餘沿用預設。片段可以是字串或函式。
  * 句型完全不同拼不出來時，用 action.message 整句覆寫（優先於片段）。
+ *
+ * 上面這些都是「攻擊方」在描述自己的招式。防守方也有兩個欄位可以插話，
+ * 由它自己的被動填入，攻擊方不需要知道：
+ *   blockMethod   BEFORE_DAMAGE 被動填，預設 block 片段拼成「用某某擋下了！」
+ *   evadeMethod   ON_EVADE 被動填，預設 miss 片段拼成「用某某躲開了！」
+ * 落空還可以用 evadeMessage 整句覆寫，且優先於攻擊方的 action.message——
+ * 「對手是怎麼躲掉的」只有防守方知道。詳見 EVASION.md。
  */
 const DefaultText = {
   DAMAGE: {
@@ -43,7 +50,11 @@ const DefaultText = {
     combo: (ctx) => `第 ${ctx.hitIndex} 擊，`,
     crit: '會心一擊！',
     hit: (ctx) => `對 ${ctx.target.name}${ctx.partName ? ` 的${ctx.partName}` : ''} 造成了 ${ctx.value} 點傷害！`,
-    miss: (ctx) => `但是被 ${ctx.target.name} 躲開了！`,
+    // evadeMethod 由防守方的 ON_EVADE 被動填入（見 Entity.resolveEvasion），
+    // 跟下面 block 讀 blockMethod 是同一種寫法：預設句留一個洞給防守方補。
+    // 沒有 evadeMethod 時必須一字不差地還原成原本的「但是被 X 躲開了！」——
+    // 名字後面那個空格是既有戰報的一部分，所以洞開在空格之後而不是之前。
+    miss: (ctx) => `但是被 ${ctx.target.name} ${ctx.evadeMethod ? `用${ctx.evadeMethod}` : ''}躲開了！`,
     block: (ctx) => ctx.value === 0
       ? `但是被 ${ctx.target.name}${ctx.blockMethod ? ` 用${ctx.blockMethod}` : ''}擋下了！`
       : `但是被 ${ctx.target.name}${ctx.blockMethod ? ` 用${ctx.blockMethod}` : ''}抵擋，造成了 ${ctx.value} 點傷害！`
@@ -84,6 +95,7 @@ const makeContext = (skill, caster, overrides) => ({
   isCrit: false,
   blocked: false,
   blockMethod: null,
+  evadeMethod: null,
   hitIndex: 1,
   buff: null,
   skill,
@@ -259,6 +271,8 @@ class Skill {
 
             // A successful counter has already won its reaction check, so its reply cannot miss.
             if (!context?.counterSource && !Formulas.isHit(caster, target, action.accuracy || 1)) {
+              // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
+              const evasion = target.resolveEvasion({ caster, skill: this, action, hitIndex, hits, isNormalAttack });
               logger.addLog({
                 type: 'MISS',
                 actorId: caster.id,
@@ -266,9 +280,12 @@ class Skill {
           skillTier: this.tier,
           isNormalAttack,
                 targetId: target.id,
-                message: composeMessage(
+                ...(evasion.evadeMethod ? { evadeMethod: evasion.evadeMethod } : {}),
+                // 防守方的整句覆寫排在攻擊方 action.message 之前：閃避方式是只有
+                // 防守方知道的事，攻擊方的技能文案寫不出「對手是怎麼躲掉的」。
+                message: evasion.evadeMessage || composeMessage(
                   action,
-                  makeContext(this, caster, { target, targets: [target], hitIndex }),
+                  makeContext(this, caster, { target, targets: [target], hitIndex, evadeMethod: evasion.evadeMethod }),
                   { isComboHit: hits > 1 && i > 0, isHitLanded: false }
                 )
               });

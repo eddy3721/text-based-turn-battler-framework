@@ -219,6 +219,8 @@ new Skill({ id: 'random_move', actions: [
 
 防守方 `AFTER_DAMAGE_RECEIVED`、隨機部位與 `ON_PART_BREAK` 的設定及結算順序，見 [受傷後被動與部位破壞](DAMAGE_REACTIONS.md)。
 
+攻擊落空時由防守方描述自己是怎麼躲掉的（`ON_EVADE`、`evadeMethod`／`evadeMessage`），見 [閃避風格](EVASION.md)。
+
 `AFTER_DAMAGE_DEALT` 的 `enabled(self, hit)` 與 `action(self, hit, logger, engine)`
 可讀取 `hit.caster/target/skill/isNormalAttack/damage`。僅正傷害且雙方仍存活時觸發。
 例如 enabled 檢查 isNormalAttack，再呼叫獨立爆炸技能，即可防止爆炸反覆觸發自己。
