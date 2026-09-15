@@ -256,8 +256,12 @@ class BattleEngine {
       if (this.result) break;
 
       // 2. 判斷是否能行動
-      if (!entity.canAct()) {
-        this.logger.addLog({ type: 'TEXT', actorId: entity.id, message: `${entity.name} 無法行動！` });
+      // 這是每個行動槽唯一一次 STUN 擲骰的地方；必定暈眩與機率型麻痺都走這條。
+      const stun = entity.rollStun();
+      if (stun) {
+        this.logger.addLog({
+          type: 'TEXT', actorId: entity.id, buffId: stun.id, message: stun.blockMessage(entity)
+        });
       } else {
         this.triggerBuffs(entity, 'BEFORE_ACTION');
         if (this.result) break;

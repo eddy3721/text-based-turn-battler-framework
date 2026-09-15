@@ -143,9 +143,20 @@ class Entity {
   }
 
   // 判斷是否能行動 (例如是否有暈眩 Buff)
+  // 只認「必定無法行動」的暈眩（chance 1）。機率型麻痺不在這裡擲骰：
+  // canAct() 在一個行動槽裡會被呼叫不只一次（幸運事件、以及對手打過來時的反擊判定），
+  // 擲骰放進來會在同一個槽裡擲出互相矛盾的結果。
+  // 機率型的判定集中在 rollStun()，由 BattleEngine 在行動槽開頭呼叫剛好一次。
+  // 代價是機率型麻痺不影響反擊與幸運事件，只擋主動行動——這是刻意的取捨。
   canAct() {
     if (!this.isAlive) return false;
-    return !this.buffs.some(b => b.type === 'STUN');
+    return !this.buffs.some(b => b.type === 'STUN' && b.chance >= 1);
+  }
+
+  // 這個行動槽有沒有被麻痺擋下。回傳擋下它的 Buff（讓呼叫端取用自訂文案），沒有就是 null。
+  rollStun() {
+    if (!this.isAlive) return null;
+    return this.buffs.find(b => b.type === 'STUN' && b.rollBlock()) || null;
   }
 
   // 取得加成後的能力值
