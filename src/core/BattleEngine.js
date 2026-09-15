@@ -301,11 +301,11 @@ class BattleEngine {
         const allies = entity.team === 'A' ? this.teamA : this.teamB;
         const enemies = entity.team === 'A' ? this.teamB : this.teamA;
 
-        // 技能選擇邏輯：預設40%機率釋放技能，否則普通攻擊
+        // 技能選擇邏輯：預設 35% 機率釋放技能，否則普通攻擊
         let selectedSkill = null;
         if (!entity.hasActed && entity.openingSkill?.canCast(entity, this)) selectedSkill = entity.openingSkill;
         entity.hasActed = true;
-        const skillCastChance = 0.4;
+        const skillCastChance = 0.35;
 
         if (!selectedSkill && entity.skills && entity.skills.length > 0 && Math.random() < skillCastChance) {
           // 若決定使用技能，從擁有的技能中隨機抽取一個「可施放」的技能
