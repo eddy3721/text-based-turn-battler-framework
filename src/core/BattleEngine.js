@@ -99,6 +99,9 @@ class BattleEngine {
     battleLogger.addLog({ type: 'COUNTER', actorId: target.id, targetId: caster.id,
       skillId: reply.id, skillTier: reply.tier, isNormalAttack: reply === basicCounter,
       incomingSkillId: skill.id, value, isCrit,
+      ...(replyHits.some(log => log.partId) ? { partHits: replyHits.filter(log => log.partId).map(log => ({
+        partId: log.partId, partName: log.partName, partDamage: log.partDamage, actualDamage: log.actualDamage
+      })) } : {}),
       message: `${incoming}但是遭${counterBy}反擊，${resultText}` });
     // The reply's damage is represented by the COUNTER line. Keep status, death and dialogue logs.
     buffered.filter(log => !replyHits.includes(log) && log.type !== 'SKILL_TEXT')

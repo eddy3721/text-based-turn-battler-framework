@@ -1,7 +1,8 @@
 const Buff = require('./Buff');
+const { createBodyParts, selectBodyPart, damageBodyPart } = require('./BodyParts');
 
 class Entity {
-  constructor({ id, name, team, stats, normalAttack, counterSkill = null, openingSkill = null, skills = [], buffs = [], passives = [], dialogues = {} }) {
+  constructor({ id, name, team, stats, normalAttack, counterSkill = null, openingSkill = null, skills = [], buffs = [], passives = [], dialogues = {}, parts = [] }) {
     this.id = id;
     this.name = name;
     this.team = team;
@@ -18,13 +19,22 @@ class Entity {
     this.passives = passives; // 觸發型被動技能/事件
     this.dialogues = { ...dialogues };
     this.isAlive = this.stats.hp > 0;
+    this.parts = createBodyParts(parts);
+    this.settledDamage = new WeakSet();
   }
 
   // BEFORE_DAMAGE is repeatable. Its action mutates this hit's context.damage.
   // HP_BELOW retains its existing one-shot behavior.
   takeDamage(amount, logger, context = {}) {
-    const result = { ...context, target: this, damage: amount, blocked: false, blockMethod: null };
+    const result = { ...context, source: context.source || (context.action?.type === 'DAMAGE' ? 'ATTACK' : 'DIRECT'),
+      target: this, damage: amount, actualDamage: 0, lethal: false, blocked: false, blockMethod: null };
     if (!this.isAlive) return { ...result, damage: 0 };
+    const partMultiplier = context.action?.partDamageMultiplier ?? 1;
+    if (!Number.isFinite(partMultiplier) || partMultiplier < 0) throw new Error('partDamageMultiplier must be finite and nonnegative');
+    const part = context.action?.type === 'DAMAGE' && context.caster && context.caster !== this
+      ? selectBodyPart(this.parts) : null;
+    if (part) Object.assign(result, { partId: part.id, partName: part.name, partDamage: 0,
+      partDurability: part.durability, partMaxDurability: part.maxDurability, brokePart: false });
     for (const passive of [...this.passives]) {
       if (passive.trigger !== 'BEFORE_DAMAGE') continue;
       if (passive.enabled && !passive.enabled(this, result)) continue;
@@ -32,14 +42,26 @@ class Entity {
     }
     result.damage = Math.max(0, Math.floor(result.damage));
     if (result.damage === 0) return result;
+    result.actualDamage = Math.min(this.stats.hp, result.damage);
     this.stats.hp -= result.damage;
     this.checkDeath();
+    result.lethal = !this.isAlive;
+    if (part) Object.assign(result, damageBodyPart(part, result.actualDamage, partMultiplier));
     if (!context.deferReactions) this.finishDamage(result, logger, context.engine);
     return result;
   }
 
   // Skill records the triggering hit first; direct damage callers settle immediately.
   finishDamage(hit, logger, engine) {
+    if (this.settledDamage.has(hit)) return;
+    this.settledDamage.add(hit);
+    if (hit.brokePart) {
+      logger?.addLog({ type: 'PART_BREAK', actorId: hit.caster?.id, targetId: this.id,
+        skillId: hit.skill?.id, partId: hit.partId, partName: hit.partName,
+        value: hit.partDamage, message: `${this.name} 的${hit.partName}被破壞了！` });
+      this.runDamagePassives('ON_PART_BREAK', hit, logger, engine);
+    }
+    if (hit.actualDamage > 0) this.runDamagePassives('AFTER_DAMAGE_RECEIVED', hit, logger, engine);
     engine?.settleDeaths();
     if (hit.damage > 0 && this.isAlive) this.checkPassives('ON_HP_CHANGE', logger, engine);
     if (!engine?.result && hit.damage > 0 && this.isAlive && hit.caster?.isAlive) {
@@ -52,6 +74,17 @@ class Entity {
     }
     engine?.settleDeaths();
     engine?.checkWinCondition();
+  }
+
+  // New receive/break hooks also report lethal hits. Reactive skills should
+  // guard self.isAlive; observers can still record the final actual HP loss.
+  runDamagePassives(trigger, hit, logger, engine) {
+    for (const passive of [...this.passives]) {
+      if (engine?.result) break;
+      if (passive.trigger !== trigger) continue;
+      if (passive.enabled && !passive.enabled(this, hit)) continue;
+      passive.action?.(this, hit, logger, engine);
+    }
   }
 
   heal(amount, logger, { engine, deferReactions = false } = {}) {

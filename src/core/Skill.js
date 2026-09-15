@@ -42,7 +42,7 @@ const DefaultText = {
     action: (ctx) => `${ctx.caster.name} 攻擊，`,
     combo: (ctx) => `第 ${ctx.hitIndex} 擊，`,
     crit: '會心一擊！',
-    hit: (ctx) => `對 ${ctx.target.name} 造成了 ${ctx.value} 點傷害！`,
+    hit: (ctx) => `對 ${ctx.target.name}${ctx.partName ? ` 的${ctx.partName}` : ''} 造成了 ${ctx.value} 點傷害！`,
     miss: (ctx) => `但是被 ${ctx.target.name} 躲開了！`,
     block: (ctx) => ctx.value === 0
       ? `但是被 ${ctx.target.name}${ctx.blockMethod ? ` 用${ctx.blockMethod}` : ''}擋下了！`
@@ -118,6 +118,12 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
 
 class Skill {
   constructor({ id, name, actions = [], tier = 'standard' }) {
+    for (const action of actions) {
+      if (action.partDamageMultiplier !== undefined &&
+          (action.type !== 'DAMAGE' || !Number.isFinite(action.partDamageMultiplier) || action.partDamageMultiplier < 0)) {
+        throw new Error('partDamageMultiplier requires a DAMAGE action and a finite nonnegative value');
+      }
+    }
     this.id = id;
     this.name = name;
     this.tier = tier; // standard / ultimate，提供戰報呈現使用
@@ -303,12 +309,16 @@ class Skill {
           isNormalAttack,
               targetId: target.id,
               value: damage,
+              actualDamage: outcome.actualDamage,
+              ...(outcome.partId ? { partId: outcome.partId, partName: outcome.partName,
+                partDamage: outcome.partDamage || 0, partDurability: outcome.partDurability } : {}),
               isCrit,
               blocked: outcome.blocked,
               message: composeMessage(
                 action,
                 makeContext(this, caster, { target, targets: [target], value: damage, isCrit, hitIndex,
-                  blocked: outcome.blocked, blockMethod: outcome.blockMethod }),
+                  blocked: outcome.blocked, blockMethod: outcome.blockMethod,
+                  partId: outcome.partId, partName: outcome.partName, partDamage: outcome.partDamage }),
                 { isComboHit: hits > 1 && i > 0, isHitLanded: true }
               )
             });

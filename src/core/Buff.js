@@ -8,8 +8,8 @@ class Buff {
     this.effect = effect; // 可選的自訂效果函式
     if (trigger) {
       if (!['BEFORE_ACTION', 'ROUND_START'].includes(trigger) ||
-          !Number.isInteger(remainingTriggers) || remainingTriggers < 1 ||
-          !Array.isArray(skillIds) || !skillIds.length || skillIds.some(id => typeof id !== 'string' || !id)) {
+        !Number.isInteger(remainingTriggers) || remainingTriggers < 1 ||
+        !Array.isArray(skillIds) || !skillIds.length || skillIds.some(id => typeof id !== 'string' || !id)) {
         throw new Error(`Invalid triggered buff "${id}".`);
       }
       this.trigger = trigger;
@@ -21,11 +21,11 @@ class Buff {
   // 進入回合前觸發 (例如中毒扣血)
   onPreTurn(entity, logger, context) {
     if (this.type === 'DOT') {
-      const outcome = entity.takeDamage(this.value, logger, { deferReactions: true });
+      const outcome = entity.takeDamage(this.value, logger, { source: 'DOT', buffId: this.id, deferReactions: true });
       logger.addLog({
         type: 'BUFF_EFFECT',
         actorId: entity.id,
-        message: `${entity.name} 受到 ${this.name} 影響，失去了 ${outcome.damage} 點生命值！`,
+        message: `${entity.name} 受到 ${this.name} 影響，受到了 ${outcome.damage} 點傷害！`,
         value: outcome.damage
       });
       entity.finishDamage(outcome, logger, context);
