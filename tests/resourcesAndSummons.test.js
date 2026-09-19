@@ -81,7 +81,7 @@ test('RESTORE_SP and SUMMON logs compose from text fragments like every other ac
     const log = logger();
     new Skill({ id: 'feast', name: '佳餚', actions: [{ type: 'RESTORE_SP', targetType: 'ALLY_ALL', amount: 8, text }] })
       .execute(chef, [ally], [], log);
-    return log.logs.at(-1).message;
+    return log.logs.find(entry => entry.type === 'SP_RECOVER').message;
   };
   assert.equal(restore(undefined), 'chef 的佳餚使 ally 回復了 8 SP！');
   assert.equal(restore({ action: '', recover: ctx => `${ctx.target.name} 恢復了 ${ctx.value} SP！` }), 'ally 恢復了 8 SP！');
@@ -113,4 +113,79 @@ test('dead or stunned opening caster cannot summon; ordinary engine needs no fac
   assert.equal(engine.teamB.length, 2);
   b.takeDamage(100, engine.logger);
   assert.equal(engine.canSummon(b, b.openingSkill.actions[0]), false);
+});
+
+test('a factory returning nothing means no reinforcement was available, not a crash', t => {
+  t.mock.method(Formulas, 'isHit', () => true);
+  const caller = new Entity({ id: 'caller', name: '灰燼', team: 'A',
+    stats: { hp: 100, maxHp: 100, sp: 50, atk: 10, spd: 10 } });
+  const foe = new Entity({ id: 'foe', name: '敵', team: 'B',
+    stats: { hp: 100, maxHp: 100, sp: 0, atk: 10, spd: 1 } });
+  const sign = new Skill({ id: 'sign', name: '白色召喚印記', actions: [{
+    type: 'SUMMON', monsterId: 'phantom', maxTotal: 1, maxAlive: 1, spCost: 10,
+    text: { summon: ctx => `的印記亮起，${ctx.target.name} 回應了召喚！`, fail: () => '放下了印記，但沒有人回應。' }
+  }] });
+  const engine = new BattleEngine([caller], [foe], { summonFactory: () => null });
+
+  sign.execute(caller, [caller], [foe], engine.logger, engine);
+  assert.deepEqual(engine.logger.logs.map(log => log.type), ['SUMMON_FAILED']);
+  assert.equal(engine.logger.logs[0].message, '灰燼 放下了印記，但沒有人回應。');
+  assert.equal(engine.teamA.length, 1);
+  assert.equal(caller.stats.sp, 40); // 印記還是用掉了
+  // 嘗試本身計入 maxTotal，所以不會每個行動槽重試一次把戰報洗滿。
+  assert.equal(sign.canCast(caller, engine), false);
+});
+
+test('the default failure line reuses the summon action prefix', t => {
+  const caller = new Entity({ id: 'caller', name: '灰燼', team: 'A',
+    stats: { hp: 100, maxHp: 100, sp: 50, atk: 10, spd: 10 } });
+  const sign = new Skill({ id: 'sign', name: '印記',
+    actions: [{ type: 'SUMMON', monsterId: 'phantom' }] });
+  const engine = new BattleEngine([caller], [], { summonFactory: () => undefined });
+  sign.execute(caller, [caller], [], engine.logger, engine);
+  assert.equal(engine.logger.logs[0].message, '灰燼 沒有得到任何回應。');
+});
+
+test('a factory can mark a summon hostile so it joins the opposing side', t => {
+  const caller = new Entity({ id: 'caller', name: '灰燼', team: 'A',
+    stats: { hp: 100, maxHp: 100, sp: 50, atk: 10, spd: 10 } });
+  const foe = new Entity({ id: 'foe', name: '敵', team: 'B',
+    stats: { hp: 100, maxHp: 100, sp: 0, atk: 10, spd: 1 } });
+  const sign = new Skill({ id: 'sign', name: '印記', actions: [{
+    type: 'SUMMON', monsterId: 'spirit', maxTotal: 1, maxAlive: 1,
+    text: { summon: ctx => ctx.hostile ? `遭到暗靈 ${ctx.target.name} 入侵！` : `已召喚靈體 ${ctx.target.name}。` }
+  }] });
+  const engine = new BattleEngine([caller], [foe], {
+    summonFactory: (id, options) => Object.assign(new Entity({
+      id: options.entityId, name: '入侵者', team: 'A',
+      stats: { hp: 50, maxHp: 50, sp: 0, atk: 10, spd: 5 }
+    }), { summonHostile: true })
+  });
+
+  sign.execute(caller, [caller], [foe], engine.logger, engine);
+  assert.equal(engine.teamA.length, 1); // 沒有加入召喚者這邊
+  assert.equal(engine.teamB.length, 2);
+  const invader = engine.teamB[1];
+  assert.equal(invader.team, 'B');
+  assert.equal(invader.summonerId, caller.id); // 仍然追得回是誰招來的
+  assert.equal(engine.logger.logs[0].message, '灰燼 遭到暗靈 入侵者 入侵！');
+  // maxAlive 掃兩邊，敵對增援一樣佔名額。
+  assert.equal(sign.canCast(caller, engine), false);
+});
+
+test('a friendly summon still joins the caster side and reports hostile as false', t => {
+  const caller = new Entity({ id: 'caller', name: '灰燼', team: 'A',
+    stats: { hp: 100, maxHp: 100, sp: 50, atk: 10, spd: 10 } });
+  const sign = new Skill({ id: 'sign', name: '印記', actions: [{
+    type: 'SUMMON', monsterId: 'spirit',
+    text: { summon: ctx => ctx.hostile ? '入侵！' : `已召喚靈體 ${ctx.target.name}。` }
+  }] });
+  const engine = new BattleEngine([caller], [], {
+    summonFactory: (id, options) => new Entity({ id: options.entityId, name: '白靈', team: 'B',
+      stats: { hp: 50, maxHp: 50, sp: 0, atk: 10, spd: 5 } })
+  });
+  sign.execute(caller, [caller], [], engine.logger, engine);
+  assert.equal(engine.teamA.length, 2);
+  assert.equal(engine.teamA[1].team, 'A'); // 工廠給的 team 被召喚者的陣營蓋掉
+  assert.equal(engine.logger.logs[0].message, '灰燼 已召喚靈體 白靈。');
 });

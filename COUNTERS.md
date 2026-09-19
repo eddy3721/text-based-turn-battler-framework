@@ -41,6 +41,31 @@ DOT、直接 takeDamage 不進入反擊判定。
 技能名不加引號。狀態、死亡與台詞仍在其後各自輸出。COUNTER 的 actorId 是反擊者、targetId 是原攻擊者、value 是反擊總傷害，
 incomingSkillId 記錄被反制招式，skillId／skillTier 記錄實際反擊招式。
 
+## 讓反擊技能自己演出
+
+上面那套濃縮是**預設**（`counterStyle: 'summary'`）。它的前提是「還擊沒有值得單獨佔一行
+的文案」——一般還擊放行只會得到「X 攻擊，對 Y 造成了 N 點傷害！」，跟上一行重複。
+
+有自己演出的反擊技能可以宣告 `counterStyle: 'detailed'`：
+
+```js
+new Skill({ id: 'shield_parry', name: '盾反', counterStyle: 'detailed', actions: [...] });
+```
+
+    敵人 使出了 薪王四連，第 2 擊，但是遭灰燼以盾反反擊！
+    灰燼 反手將劍尖送進 敵人 的胸膛，造成了 284 點傷害！
+
+COUNTER 那一句只宣告「被反擊了」，不再接結果；還擊自己的 DAMAGE／BLOCK／MISS 與
+SKILL_TEXT 全部原樣放行，順序不變。落空與被擋也不必特別處理——還擊自己的那一行
+本來就會說明結果。
+
+COUNTER 紀錄的 `value`、`isCrit`、`partHits` 在兩種模式下都照舊寫入：換掉的只有句子，
+統計與 UI 讀的是欄位，不該因為改了呈現方式就少一筆數字。注意詳細版的傷害會同時
+出現在 COUNTER 的 `value` 與還擊自己的 DAMAGE 紀錄裡，**累加傷害時只能取其一**。
+
+`counterStyle` 只在這招被當成 `counterSkill` 時有意義；主動施放時兩種模式毫無差別。
+值打錯會在建構時直接拋錯，不會安靜地退回濃縮版。
+
 Action 可設定 `requiresDamage: true`：只對本次技能執行先前造成過正傷害的目標生效。
 例如 DAMAGE 後接此條件的 BUFF，便能讓繳械在落空、完全格擋、完全招架時不生效。
 省略此設定的既有 BUFF 仍獨立施加。

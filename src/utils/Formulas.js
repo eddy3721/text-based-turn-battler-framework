@@ -65,7 +65,7 @@ class Formulas {
     const gap = Math.max(0, (statsOf(opponent).luk ?? 0) - (statsOf(actor).luk ?? 0));
     const ratio = gap / (gap + 100);
     return { gap, ratio, purpleChance: 0.30 * ratio, redChance: 0.10 * ratio,
-      // Only probability saturates; damage grows with the luck gap, independently of HP.
+      // Raw damage before variance and the universal softenLuckDamage curve.
       purpleDamage: gap * 1.2,
       redDamage: gap * 2.4 };
   }
@@ -73,6 +73,16 @@ class Formulas {
   // Shared by normal and luck damage: vary before rounding, minimum 1.
   static applyDamageVariance(baseDamage) {
     return Math.max(1, Math.floor(baseDamage * (0.9 + Math.random() * 0.2)));
+  }
+
+  // All luck events, regardless of team, character, monster or game mode.
+  // Apply after variance, preserving the random stream and small accidents.
+  static softenLuckDamage(damage, tier) {
+    const multiplier = tier === 'RED' ? 2.4 : 1.2;
+    const gap = damage / multiplier;
+    const knee = 200;
+    if (gap <= knee) return damage;
+    return Math.floor(multiplier * (knee + knee * Math.log1p((gap - knee) / knee)));
   }
 
   static rollLuckEvent(profile, roll = Math.random()) {
@@ -122,13 +132,13 @@ class Formulas {
   }
 
   // 傷害公式 (使用漸進式減傷)
-  static calculateDamage(attacker, defender, skillPower = 1, statKey = 'atk') {
+  static calculateDamage(attacker, defender, skillPower = 1, statKey = 'atk', { ignoreDefense = false } = {}) {
     const scale = statsOf(attacker)[statKey];
     if (typeof scale !== 'number') {
       throw new Error(`Damage formula references unknown attacker stat "${statKey}".`);
     }
     // 確保防禦不小於 0 (如果未來有破甲負防禦機制，可以修改這裡)
-    const def = Math.max(0, statsOf(defender).def || 0);
+    const def = ignoreDefense ? 0 : Math.max(0, statsOf(defender).def || 0);
     
     // 防禦常數 (當 def 等於這個常數時，減傷 50%)
     const EHP_C = 300; 

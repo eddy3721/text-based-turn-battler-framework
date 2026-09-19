@@ -25,7 +25,7 @@ test('every landed hit rolls its own parry, each replying immediately without re
   // counter=1：三擊全被招架，攻擊方一點傷害都打不出去，自己挨三下還擊。
   assert.equal(a.stats.hp, 70);
   assert.equal(b.stats.hp, 100);
-  assert.equal(b.stats.sp, 30);
+  assert.equal(b.stats.sp, 27);
   assert.equal(b.buffs[0].duration, 2);
   assert.equal(b.hasActed, false);
   assert.deepEqual(engine.logger.logs.map(l => l.type), ['COUNTER', 'COUNTER', 'COUNTER']);
@@ -114,8 +114,14 @@ test('skill reply pays SP, applies damage-gated effects, and falls back without 
   assert.equal(a.buffs[0].id, 'disarm');
   assert.match(engine.logger.logs[0].message, /以劍神流・剝奪劍反擊/);
   assert.doesNotMatch(engine.logger.logs[0].message, /[「」"']/);
-  b.stats.sp = 0; run();
+  // 剛好夠一次普通反擊、不夠剝奪劍：先確認會退回 basic_counter 並把體力用光，
+  // 下一次 run() 才問得出「連普通反擊都付不起時完全不反擊」。
+  b.stats.sp = 1; run();
   assert.equal(engine.logger.logs.filter(l => l.type === 'COUNTER').at(-1).skillId, 'basic_counter');
+  assert.equal(b.stats.sp, 0);
+  const counterCount = engine.logger.logs.filter(l => l.type === 'COUNTER').length;
+  run();
+  assert.equal(engine.logger.logs.filter(l => l.type === 'COUNTER').length, counterCount);
 });
 
 test('counter reply cannot miss, but can be blocked or crit; parried damage does not apply gated buff', t => {
@@ -185,4 +191,40 @@ test('counter context and call stack unwind if a reply throws', t => {
   b.counterSkill = new Skill({ id: 'broken', actions: [{ type: 'HEAL', stat: 'unknown' }] });
   assert.throws(run, /unknown/);
   assert.equal(engine.counterSource, null); assert.equal(engine.skillCallStack.length, 0);
+});
+
+test('counterStyle detailed lets the reply keep its own lines instead of being folded in', t => {
+  const parry = new Skill({
+    id: 'parry', name: '盾反', counterStyle: 'detailed',
+    actions: [{ type: 'DAMAGE', text: {
+      action: ctx => `${ctx.caster.name} 反手將劍尖送進 ${ctx.target.name} 的胸膛，`,
+      hit: ctx => `造成了 ${ctx.value} 點傷害！`
+    } }]
+  });
+  const { a, b, engine, run } = setup(t, strike([{ type: 'DAMAGE' }]));
+  b.counterSkill = parry;
+  run();
+
+  assert.deepEqual(engine.logger.logs.map(log => log.type), ['COUNTER', 'DAMAGE']);
+  // 宣告行不再自己講結果，結果由還擊自己那一行負責。
+  assert.equal(engine.logger.logs[0].message, 'a 攻擊，但是遭b以盾反反擊！');
+  assert.equal(engine.logger.logs[1].message, 'b 反手將劍尖送進 a 的胸膛，造成了 10 點傷害！');
+  // 換掉的只有句子：統計欄位兩種模式一致。
+  assert.equal(engine.logger.logs[0].value, 10);
+  assert.equal(engine.logger.logs[0].skillId, 'parry');
+});
+
+test('the summary style stays the default so existing counter reports do not move', t => {
+  const plain = new Skill({ id: 'plain', name: '回擊', actions: [{ type: 'DAMAGE' }] });
+  assert.equal(plain.counterStyle, 'summary');
+  const { b, engine, run } = setup(t, strike([{ type: 'DAMAGE' }]));
+  b.counterSkill = plain;
+  run();
+  assert.deepEqual(engine.logger.logs.map(log => log.type), ['COUNTER']);
+  assert.equal(engine.logger.logs[0].message, 'a 攻擊，但是遭b以回擊反擊，受到 10 點傷害！');
+});
+
+test('an unknown counterStyle throws at construction instead of silently condensing', () => {
+  assert.throws(() => new Skill({ id: 'oops', name: 'x', counterStyle: 'verbose' }),
+    /unknown counterStyle "verbose"/);
 });

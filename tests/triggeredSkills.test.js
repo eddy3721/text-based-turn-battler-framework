@@ -173,7 +173,8 @@ test('normal attacks trigger one follow-up per positive hit on same target, neve
   t.mock.method(Formulas, 'isHit', () => false);
   engine.logger.logs.length = 0;
   a.normalAttack.execute(a, [a], [b, other], engine.logger, engine);
-  assert.ok(engine.logger.logs.every(l => l.type === 'MISS'));
+  assert.equal(engine.logger.logs.filter(l => l.type === 'MISS').length, 3);
+  assert.ok(engine.logger.logs.every(l => ['MISS', 'FATIGUE'].includes(l.type)));
 });
 
 test('DOT death uses shared death processing and cancels charge before action', t => {
