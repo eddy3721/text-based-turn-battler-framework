@@ -91,6 +91,7 @@ test('counter chance rides the technique gap and never truncates the weaker side
   const ceiling = Formulas.counterChance({ stats: { counter: 0 } }, { stats: { counter: 1e9 } });
   const at = (defender, attacker) => Formulas.counterChance({ stats: { counter: attacker } }, { stats: { counter: defender } });
   assert.equal(at(100, 100), ceiling / 2, '技巧相同 → 上限的一半');
+  assert.equal(at(100, 100), 0.1, '技巧相同 → 10%，遊戲層的平衡以此為準');
   assert.equal(at(400, 400), ceiling / 2, '只看差值，絕對值高低不影響');
   // 技巧輸人仍然打得出反擊，只是機率低——這正是不用 max(0, 差值) 的理由。
   assert.ok(at(100, 200) > 0 && at(100, 200) < ceiling / 2);

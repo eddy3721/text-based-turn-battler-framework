@@ -56,8 +56,10 @@ const COMBO_GAP_PER_MAX_HIT = 40;
  *
  * GAP_SCALE 決定技巧差多敏感（越小越懸殊），CEILING 是機率上限：反擊必定命中
  * 又會跳過原本那一擊的傷害，逼近 100% 等於高點數單位完全免疫低點數單位。
+ * 目前 0.2：點數相同 10%，差 ±50 約 14.6% / 5.4%。原本 0.3（相同時 15%）在每擊
+ * 各判定一次之下反擊還是太頻繁，整條曲線等比例壓低，形狀不變。
  */
-const COUNTER_CEILING = 0.3;
+const COUNTER_CEILING = 0.2;
 const COUNTER_GAP_SCALE = 50;
 
 class Formulas {
