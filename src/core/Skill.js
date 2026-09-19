@@ -133,11 +133,14 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
 }
 
 class Skill {
-  constructor({ id, name, actions = [], tier = 'standard', counterStyle = 'summary' }) {
+  constructor({ id, name, actions = [], tier = 'standard', counterStyle = 'summary', uncounterable = false }) {
     // 打錯字若安靜地退回 summary，就只會看到「反擊怎麼沒照我寫的演出」，
     // 而那跟「這場剛好沒反擊」在戰報上長得一樣。
     if (!['summary', 'detailed'].includes(counterStyle)) {
       throw new Error(`Skill "${id}" has unknown counterStyle "${counterStyle}".`);
+    }
+    if (typeof uncounterable !== 'boolean') {
+      throw new Error(`Skill "${id}" uncounterable must be a boolean.`);
     }
     for (const action of actions) {
       if (action.ignoreDefense !== undefined &&
@@ -148,12 +151,18 @@ class Skill {
           (action.type !== 'DAMAGE' || !Number.isFinite(action.partDamageMultiplier) || action.partDamageMultiplier < 0)) {
         throw new Error('partDamageMultiplier requires a DAMAGE action and a finite nonnegative value');
       }
+      if (action.uncounterable !== undefined &&
+          (action.type !== 'DAMAGE' || typeof action.uncounterable !== 'boolean')) {
+        throw new Error('uncounterable requires a DAMAGE action and a boolean');
+      }
     }
     this.id = id;
     this.name = name;
     this.tier = tier; // standard / ultimate，提供戰報呈現使用
     // 這招被當成 counterSkill 時的戰報呈現方式，見 COUNTERS.md。
     this.counterStyle = counterStyle;
+    // 整招不進入反擊判定（例如延遲引爆的陷阱），見 COUNTERS.md。
+    this.uncounterable = uncounterable;
     this.actions = actions; // 多段動作陣列
   }
 

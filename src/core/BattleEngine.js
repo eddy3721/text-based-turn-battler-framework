@@ -97,6 +97,8 @@ class BattleEngine {
   }
 
   tryCounter(caster, target, skill, { action, hitIndex = 1, isComboHit = false } = {}) {
+    // 宣告不可反擊的招式或擊在擲骰前就排除，不消耗判定。
+    if (skill?.uncounterable || action?.uncounterable) return false;
     if (target.actionDisabled || this.counterSource || this.result || !caster.isAlive || !target.canAct()) return false;
     if (!Formulas.isCounter(caster, target)) return false;
     const callChain = this.skillCallStack.filter(call => call.caster === target).map(call => call.skillId);

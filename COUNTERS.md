@@ -66,6 +66,22 @@ COUNTER 紀錄的 `value`、`isCrit`、`partHits` 在兩種模式下都照舊寫
 `counterStyle` 只在這招被當成 `counterSkill` 時有意義；主動施放時兩種模式毫無差別。
 值打錯會在建構時直接拋錯，不會安靜地退回濃縮版。
 
+## 不可反擊的招式
+
+有些傷害在敘事上不是「出手」，被打的人沒有對象可以還擊——例如先前安裝、之後才被
+隊友的攻擊引爆的炸彈。這類招式可以宣告 `uncounterable: true`：
+
+```js
+new Skill({ id: 'bomb', name: '爆炸', uncounterable: true, actions: [...] });
+// 或只讓其中一擊免疫
+{ type: 'DAMAGE', uncounterable: true, ... }
+```
+
+技能層級涵蓋整招每一擊；寫在 DAMAGE action 上則只涵蓋該 action 的擊，其他擊照常判定。
+排除發生在擲骰之前，不消耗判定次數。與 counterSource 不同，它**不**改變命中判定、
+不把戰報標成反擊，也不影響這招的傷害觸發被動——只拿掉「對手能不能反擊」這一項。
+值必須是布林，寫在非 DAMAGE action 上會在建構時拋錯。
+
 Action 可設定 `requiresDamage: true`：只對本次技能執行先前造成過正傷害的目標生效。
 例如 DAMAGE 後接此條件的 BUFF，便能讓繳械在落空、完全格擋、完全招架時不生效。
 省略此設定的既有 BUFF 仍獨立施加。

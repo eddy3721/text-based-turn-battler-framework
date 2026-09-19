@@ -228,3 +228,33 @@ test('an unknown counterStyle throws at construction instead of silently condens
   assert.throws(() => new Skill({ id: 'oops', name: 'x', counterStyle: 'verbose' }),
     /unknown counterStyle "verbose"/);
 });
+
+// 判定必成功都擋得住，才證明 uncounterable 是硬性排除而不是降低機率。
+test('an uncounterable skill never rolls, even when the roll would succeed', t => {
+  const { a, b, engine, run } = setup(t, new Skill({ id: 'bomb', name: '爆炸', uncounterable: true,
+    actions: [{ type: 'DAMAGE', hits: 2 }] }));
+  let rolls = 0;
+  t.mock.method(Formulas, 'isCounter', () => { rolls++; return true; });
+  run();
+  assert.equal(rolls, 0);
+  assert.equal(a.stats.hp, 100);
+  assert.equal(b.stats.hp, 80);
+  assert.equal(engine.logger.logs.some(l => l.type === 'COUNTER'), false);
+});
+
+test('an uncounterable action only shields its own hits', t => {
+  const { a, b, run } = setup(t, strike([
+    { type: 'DAMAGE', uncounterable: true },
+    { type: 'DAMAGE' }
+  ]));
+  run();
+  // 第一擊照常命中，第二擊被反擊。
+  assert.equal(b.stats.hp, 90);
+  assert.equal(a.stats.hp, 90);
+});
+
+test('uncounterable must be a boolean on the skill and on a DAMAGE action', () => {
+  assert.throws(() => new Skill({ id: 'oops', name: 'x', uncounterable: 'yes' }), /must be a boolean/);
+  assert.throws(() => new Skill({ id: 'oops', name: 'x', actions: [{ type: 'HEAL', uncounterable: true }] }),
+    /uncounterable requires a DAMAGE action/);
+});
