@@ -225,7 +225,9 @@ class Skill {
     switch (targetType) {
       case 'ENEMY_SINGLE':
         if (aliveEnemies.length === 0) return [];
-        return [aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)]];
+        // 仇恨值只作用在這裡。ALLY_SINGLE 維持均勻抽：仇恨的語意是「敵人想打誰」，
+        // 拿它決定補師補誰會讓嘲諷坦克順便變成補血磁鐵，那是另一條權重。
+        return [Formulas.pickByAggro(aliveEnemies)];
       case 'ENEMY_ALL':
         return aliveEnemies;
       case 'ALLY_SINGLE':

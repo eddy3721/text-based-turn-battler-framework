@@ -133,6 +133,33 @@ class Formulas {
     return order;
   }
 
+  /**
+   * 單體技能要打誰：以仇恨值為權重抽一個目標。
+   *
+   * 呼叫端只保證候選人都還活著，權重一律現算，所以嘲諷／隱蔽這類 type:'STAT'
+   * 的 buff 一掛上就生效、一過期就還原，不需要任何人維護一張仇恨表。
+   * 刻度是倍率：aggro 2 的人被抽中的機率是 aggro 1 的兩倍。
+   *
+   * 兩個刻意的性質：
+   * - 權重全等時，這裡選到的索引就是 floor(random × n)，跟改用權重之前那行
+   *   均勻抽完全一致，而且同樣只消耗一次亂數。既有的戰鬥（與任何固定亂數的
+   *   測試）因此一字不變。
+   * - 全場權重都是 0（全員隱蔽、或 lockedStats 鎖掉 aggro）時退回均勻抽。
+   *   否則單體技能會找不到目標，雙方互相打不到，戰鬥只能卡到 maxTurns。
+   */
+  static pickByAggro(candidates) {
+    if (candidates.length <= 1) return candidates[0];
+    const weights = candidates.map(entity => Math.max(0, statsOf(entity).aggro ?? 1));
+    const sum = weights.reduce((a, b) => a + b, 0);
+    if (sum <= 0) return candidates[Math.floor(Math.random() * candidates.length)];
+    let roll = Math.random() * sum;
+    for (let i = 0; i < candidates.length; i++) {
+      if (roll < weights[i]) return candidates[i];
+      roll -= weights[i];
+    }
+    return candidates[candidates.length - 1]; // 浮點誤差的收尾
+  }
+
   // 傷害公式 (使用漸進式減傷)
   static calculateDamage(attacker, defender, skillPower = 1, statKey = 'atk', { ignoreDefense = false } = {}) {
     const scale = statsOf(attacker)[statKey];

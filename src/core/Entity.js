@@ -25,6 +25,13 @@ class Entity {
     if (!Number.isFinite(this.stats.skillCastRate) || this.stats.skillCastRate < 0 || this.stats.skillCastRate > 1) {
       throw new Error('skillCastRate must be a finite number in [0, 1]');
     }
+    // 仇恨值：單體敵方技能抽選目標時的權重。全員預設 1，所以不設定的戰鬥
+    // 跟以前一樣是均勻抽（見 Formulas.pickByAggro）。刻度就是倍率——aggro 3
+    // 的人被選中的機率是常人的三倍——調整一律靠 type:'STAT' 的 buff 乘除。
+    this.stats.aggro = stats.aggro ?? 1;
+    if (!Number.isFinite(this.stats.aggro) || this.stats.aggro < 0) {
+      throw new Error('aggro must be a finite nonnegative number');
+    }
     this.openingSkill = openingSkill;
     this.hasActed = false;
     this.normalAttack = normalAttack;

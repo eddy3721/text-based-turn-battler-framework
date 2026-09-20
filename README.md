@@ -6,6 +6,8 @@
 
 一般反擊、技能反擊與傷害條件效果請見 [COUNTERS.md](COUNTERS.md)。
 
+仇恨值如何加權單體技能的目標抽選，以及怎麼用 Buff 做嘲諷與隱蔽，見 [AGGRO.md](AGGRO.md)。
+
 這是一個基於純 JavaScript (Framework-Agnostic) 開發的回合制戰鬥核心引擎。專為類似「我的桐人」這類型的文字掛機或對戰遊戲所設計。本系統採用**一次性結算**與**資料驅動 (Data-Driven)** 的架構，讓您可以輕鬆地套用到 React、Vue、Node.js 甚至任何前端專案中。
 
 ---
