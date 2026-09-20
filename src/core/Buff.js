@@ -1,5 +1,11 @@
 class Buff {
-  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message }) {
+  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false }) {
+    if (!['positive', 'negative', 'neutral'].includes(polarity) || typeof dispellable !== 'boolean' || typeof invincible !== 'boolean') {
+      throw new Error('Invalid buff polarity, dispellable or invincible');
+    }
+    this.polarity = polarity;
+    this.dispellable = dispellable;
+    this.invincible = invincible;
     this.id = id;
     this.name = name;
     this.type = type; // 'HOT', 'DOT', 'STAT', 'STUN'

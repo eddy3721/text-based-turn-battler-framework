@@ -1,5 +1,7 @@
 # 文字對戰遊戲戰鬥模組 (Text-Based Turn-Battler Framework)
 
+可選用的無敵、貫通、狀態解除與傷害縮放見 [PROTECTION.md](PROTECTION.md)。
+
 疲勞、普攻逐擊耗體與喘息規則請見 [FATIGUE.md](FATIGUE.md)。
 
 一般反擊、技能反擊與傷害條件效果請見 [COUNTERS.md](COUNTERS.md)。

@@ -143,6 +143,12 @@ class Skill {
       throw new Error(`Skill "${id}" uncounterable must be a boolean.`);
     }
     for (const action of actions) {
+      if (action.ignoreInvincible !== undefined && (action.type !== 'DAMAGE' || typeof action.ignoreInvincible !== 'boolean')) {
+        throw new Error('ignoreInvincible requires a DAMAGE action and a boolean');
+      }
+      if (action.damageMultiplier !== undefined && (action.type !== 'DAMAGE' || !Number.isFinite(action.damageMultiplier) || action.damageMultiplier < 0)) {
+        throw new Error('damageMultiplier requires a DAMAGE action and a finite nonnegative value');
+      }
       if (action.ignoreDefense !== undefined &&
           (action.type !== 'DAMAGE' || typeof action.ignoreDefense !== 'boolean')) {
         throw new Error('ignoreDefense requires a DAMAGE action and a boolean');
@@ -355,7 +361,7 @@ class Skill {
             const hitIndex = i + 1;
 
             // A successful counter has already won its reaction check, so its reply cannot miss.
-            if (!context?.counterSource && !Formulas.isHit(caster, target, action.accuracy || 1)) {
+            if (!context?.counterSource && !action.ignoreInvincible && !Formulas.isHit(caster, target, action.accuracy || 1)) {
               // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
               const evasion = target.resolveEvasion({ caster, skill: this, action, hitIndex, hits, isNormalAttack });
               logger.addLog({
@@ -397,6 +403,7 @@ class Skill {
               damage = Math.floor(damage * Formulas.getCriticalMultiplier(caster));
             }
 
+            if (action.damageMultiplier !== undefined) damage = Math.floor(damage * action.damageMultiplier);
             const outcome = target.takeDamage(damage, logger, {
               caster, skill: this, action, hitIndex, hits, isCrit, isNormalAttack,
               isCounter: !!context?.counterSource, deferReactions: true

@@ -55,6 +55,13 @@ class Entity {
       if (passive.enabled && !passive.enabled(this, result)) continue;
       if (passive.action) passive.action(this, result, logger);
     }
+    const protection = context.action?.type === 'DAMAGE' && !context.action.ignoreInvincible
+      && this.buffs.find(buff => buff.invincible);
+    if (protection) {
+      result.damage = 0;
+      result.blocked = true;
+      result.blockMethod = protection.name || '無敵';
+    }
     result.damage = Math.max(0, Math.floor(result.damage));
     if (result.damage === 0) return result;
     result.actualDamage = Math.min(this.stats.hp, result.damage);
@@ -192,6 +199,13 @@ class Entity {
       this.isAlive = false;
       this.buffs = this.buffs.filter(buff => !buff.trigger);
     }
+  }
+
+  removeBuffs(polarity) {
+    if (!['positive', 'negative'].includes(polarity)) throw new Error('removeBuffs requires positive or negative');
+    const removed = this.buffs.filter(buff => buff.dispellable && buff.polarity === polarity);
+    this.buffs = this.buffs.filter(buff => !removed.includes(buff));
+    return removed;
   }
 
   addBuff(buffConfig, context) {
