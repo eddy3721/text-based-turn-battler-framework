@@ -148,7 +148,8 @@ class Formulas {
    *   否則單體技能會找不到目標，雙方互相打不到，戰鬥只能卡到 maxTurns。
    */
   static pickByAggro(candidates) {
-    if (candidates.length <= 1) return candidates[0];
+    // 只剩一個候選人時也要照常擲骰。舊的均勻抽在這裡一樣會呼叫 Math.random()，
+    // 省掉它會讓 1v1 整場的亂數序列位移——所有固定亂數的戰鬥都會變成另一場。
     const weights = candidates.map(entity => Math.max(0, statsOf(entity).aggro ?? 1));
     const sum = weights.reduce((a, b) => a + b, 0);
     if (sum <= 0) return candidates[Math.floor(Math.random() * candidates.length)];

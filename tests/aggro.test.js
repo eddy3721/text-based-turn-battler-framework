@@ -29,15 +29,19 @@ test('aggro defaults to 1 and rejects invalid values', () => {
   }
 });
 
-test('equal aggro picks the same target as the old uniform draw, from one random roll', () => {
-  const candidates = ['a', 'b', 'c', 'd'].map(id => entity(id, 'B'));
+// 加權抽籤不能改變亂數序列，否則每一場固定亂數的戰鬥都會變成另一場。
+// 單一候選人也要擲骰：舊的均勻抽在那裡照樣呼叫 Math.random()。
+test('equal aggro picks the same target as the old uniform draw, from exactly one random roll', () => {
+  const pool = ['a', 'b', 'c', 'd'].map(id => entity(id, 'B'));
   const original = Math.random;
   try {
-    for (const roll of [0, 0.1, 0.25, 0.49, 0.5, 0.75, 0.99]) {
-      let calls = 0;
-      Math.random = () => { calls++; return roll; };
-      assert.equal(Formulas.pickByAggro(candidates), candidates[Math.floor(roll * candidates.length)]);
-      assert.equal(calls, 1);
+    for (const candidates of [pool, pool.slice(0, 2), pool.slice(0, 1)]) {
+      for (const roll of [0, 0.1, 0.25, 0.49, 0.5, 0.75, 0.99]) {
+        let calls = 0;
+        Math.random = () => { calls++; return roll; };
+        assert.equal(Formulas.pickByAggro(candidates), candidates[Math.floor(roll * candidates.length)]);
+        assert.equal(calls, 1, `${candidates.length} 名候選人時應該剛好擲一次骰`);
+      }
     }
   } finally {
     Math.random = original;
