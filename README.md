@@ -1,14 +1,30 @@
 # 文字對戰遊戲戰鬥模組 (Text-Based Turn-Battler Framework)
 
-可選用的無敵、貫通、狀態解除與傷害縮放見 [PROTECTION.md](PROTECTION.md)。
-
-疲勞、普攻逐擊耗體與喘息規則請見 [FATIGUE.md](FATIGUE.md)。
-
-一般反擊、技能反擊與傷害條件效果請見 [COUNTERS.md](COUNTERS.md)。
-
-仇恨值如何加權單體技能的目標抽選，以及怎麼用 Buff 做嘲諷與隱蔽，見 [AGGRO.md](AGGRO.md)。
-
 這是一個基於純 JavaScript (Framework-Agnostic) 開發的回合制戰鬥核心引擎。專為類似「我的桐人」這類型的文字掛機或對戰遊戲所設計。本系統採用**一次性結算**與**資料驅動 (Data-Driven)** 的架構，讓您可以輕鬆地套用到 React、Vue、Node.js 甚至任何前端專案中。
+
+無 runtime 依賴，測試只用 Node 內建的 `node:test`。
+
+```bash
+npm run demo   # 跑一場完整的示範戰鬥，把戰報印到終端機
+npm test       # 執行測試
+```
+
+示範戰鬥的原始碼在 [examples/basic.js](examples/basic.js)，它把七種 action type
+各用過一次，是最快看懂「技能資料長什麼樣」的入口。
+
+### 進階主題
+
+| 文件 | 內容 |
+| --- | --- |
+| [COUNTERS.md](COUNTERS.md) | 一般反擊、技能反擊與傷害條件效果 |
+| [EVASION.md](EVASION.md) | 落空時由防守方描述自己怎麼躲的（`ON_EVADE` / `AFTER_EVADE`） |
+| [DAMAGE_REACTIONS.md](DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
+| [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除與傷害縮放 |
+| [FATIGUE.md](FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
+| [AGGRO.md](AGGRO.md) | 仇恨值如何加權目標抽選，以及用 Buff 做嘲諷與隱蔽 |
+| [SKILL_MODIFIERS.md](SKILL_MODIFIERS.md) | 技能施放率 `skillCastRate`、無視防禦與敵方光環 |
+| [LUCK_EVENTS.md](LUCK_EVENTS.md) | 幸運事件（紫／紅）與遞減曲線 |
+| [INANIMATE.md](INANIMATE.md) | 不能行動的目標（`actionDisabled`／`lockedStats`）與整次攻擊結束後的反應 |
 
 ---
 
@@ -126,15 +142,37 @@ result.logs.forEach((log, index) => {
 這套框架提供了骨幹，但具體的遊戲體驗需要您自行定義以下內容：
 
 ### 1. 修改數值公式 (`src/utils/Formulas.js`)
-目前的傷害公式僅僅是簡單的 `(攻擊力 * 技能倍率) - 防禦力`。
-您需要依照您的遊戲平衡來修改：
-- 傷害公式 (可能要加入亂數浮動值、屬性相剋倍率)。
-- 行動順序演算法 (目前是單純比 SPD，您可以改為跑條/Action Gauge 系統)。
-- 閃避與命中的期望值計算。
+所有數值計算都集中在這個檔案，主要常數的上方都有一段「為什麼是這個值」的註解。
+目前的實作是：
+
+- **傷害**：`攻擊能力 × 技能倍率 × (300 / (防禦 + 300))`，再套 ±10% 浮動、最低 1 點。
+  `300` 是減傷常數（防禦剛好等於它時減傷 50%）。攻擊能力預設讀 `atk`，技能可用
+  `statKey: 'int'` 改讀其他能力值，`ignoreDefense` 可跳過減傷。
+- **爆擊**：機率為 `stats.cri`，倍率為 `stats.criDmg`（省略為 1.5 倍）。
+- **命中**：`技能命中率 + hit/100 - eva/(eva + 100)`，保底 10%，因此不存在完全閃避。
+- **行動順序**：不是單純比 SPD，而是**以速度為權重的抽籤**。每回合有
+  `存活人數 × 2` 個行動槽，被抽中的人速度暫時降 3/4，所以快的人搶得到更多次行動，
+  但不會壟斷整個回合。
+- **連擊**：由速度差決定次數，速度差每 100 點提高下限、每 40 點提高上限。
+
+您需要依自己的遊戲平衡調整的，通常是屬性相剋倍率、等級差修正，或是把行動順序
+換成跑條 / Action Gauge 系統。
 
 ### 2. 擴充更多類型的 Action (在 `Skill.js`)
-目前 `Skill.js` 的 `actions` 支援 `TEXT`, `DAMAGE`, `HEAL`, `BUFF`。
-如果您的企劃有更複雜的機制（例如：「偷竊」、「吸血」、「復活」或「驅散敵方 Buff」），您需要在 `Skill.js` 的 `execute` 迴圈中增加對應的 `action.type` 處理邏輯。
+目前 `Skill.js` 的 `actions` 支援七種 `type`：
+
+| type | 用途 |
+| --- | --- |
+| `TEXT` | 只輸出一行戰報，不結算任何數值（用於起手台詞、演出） |
+| `DAMAGE` | 傷害，支援 `hits` 多段、`power` 倍率、`statKey`、`accuracy` |
+| `HEAL` | 治療，日誌使用實際恢復量 |
+| `BUFF` | 附加狀態效果（`HOT` / `DOT` / `STAT` / `STUN`，見下方 `Buff`） |
+| `RESTORE_SP` | 恢復 SP，輸出 `SP_RECOVER` 日誌 |
+| `SUMMON` | 召喚增援，需在建立引擎時注入 `summonFactory`（見「召喚與資源恢復」） |
+| `CAST_SKILL` | 呼叫另一個已註冊的技能，需注入 `skillResolver`（見「呼叫已註冊技能與定時效果」） |
+
+如果您的企劃有更複雜的機制（例如「偷竊」、「吸血」、「復活」或「驅散敵方 Buff」），
+您需要在 `Skill.js` 的 `execute` 迴圈中增加對應的 `action.type` 處理邏輯。
 
 ### 3. 技能與裝備的 JSON 化
 因為目前技能的 `message` 參數使用了 Arrow Function 來做到字串格式化，如果您希望技能設定可以完全放在資料庫 (Database) 中當作純 JSON 傳輸，您會需要寫一個 Parsing 層，將 `{caster} 攻擊了 {target}` 這種字串解析成實際的文字，藉此拔除程式碼中的 Function。
@@ -150,12 +188,25 @@ result.logs.forEach((log, index) => {
 
 如果您擔心未來戰鬥框架更新時，每次都要「手動複製資料夾」會很麻煩，這裡有幾種業界常見的整合方式：
 
-### 1. (推薦) 封裝成本地 NPM 套件 (NPM Package)
-這是最乾淨的做法！您可以為這個框架加入一個 `package.json`，然後在您的 React 專案中直接用 NPM 安裝它。
-- 在本框架目錄執行 `npm init -y`。
-- 在您的 React 專案中執行：`npm install 絕對路徑/text-based-turn-battler-framework`
-- 未來如果戰鬥框架有修改程式碼，只要在 React 專案執行 `npm update` 即可！
-- 在 React 中引用的方式會變成：`import { BattleEngine } from 'text-based-turn-battler-framework';`
+### 1. (推薦) 當成 NPM 套件安裝
+本框架已經是一個可安裝的套件（`main` 指向 `src/index.js`，無任何 runtime 依賴），
+不需要自己 `npm init`。在您的專案中選一種安裝方式：
+
+```bash
+# 直接裝 Git repo（最省事，適合自己或小團隊）
+npm install github:eddy3721/text-based-turn-battler-framework
+
+# 或裝打包好的 tarball（適合部署環境無法存取外部 repo 時）
+npm install ./vendor/text-based-turn-battler-framework-1.0.20.tgz
+```
+
+引用方式都是：`const { BattleEngine } = require('text-based-turn-battler-framework');`
+（ESM 專案寫 `import { BattleEngine } from 'text-based-turn-battler-framework';`）。
+
+> 參考實作「我的桐人」選的是第二種：在框架目錄執行
+> `npm pack --pack-destination <遊戲>/backend/vendor --ignore-scripts`，把 tarball
+> 連同 lockfile 一起 commit。這樣部署機器只要 clone 遊戲本身就能 `npm ci`，
+> 不必存取這個 repo，也不會依賴未發佈的 commit；舊版 tarball 留著就是可回滾的產物。
 
 ### 2. 使用 Git 子模組 (Git Submodule)
 如果兩個專案都在 Git 上，您可以將戰鬥框架作為子模組引入 React 專案中。當戰鬥框架有更新並 push 到 Github 時，React 專案只需要下 `git submodule update --remote` 就能同步最新程式碼。
@@ -168,7 +219,10 @@ result.logs.forEach((log, index) => {
 - **放置位置**：通常會放在 React 專案的 `src/lib/battler-engine/` 或是 `src/features/combat/` 底下。
 - **需要改名嗎？**：強烈建議**將框架原本的 `src` 資料夾改名**為 `battler-engine` 或是 `core`，以免跟 React 專案本身的 `src` 搞混。
 - 這樣引入時就會長得像：`import { BattleEngine } from '../lib/battler-engine/index';`
-# 受傷前被動
+
+---
+
+## 受傷前被動與格擋
 
 Entity 支援可重複執行的 `trigger: 'BEFORE_DAMAGE'` 被動。可選的
 `enabled(self, hit)` 回傳是否啟用，`action(self, hit, logger)` 修改本擊的

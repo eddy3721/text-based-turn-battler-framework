@@ -22,13 +22,18 @@ test('action target resolver redirects every hostile damage segment to one ally 
   caster.normalAttack = skill;
   t.mock.method(Formulas, 'isHit', () => true);
   t.mock.method(Formulas, 'isCounter', () => false);
+  // 固定成「施放者剛好行動一次」。預設的速度權重抽籤會讓他拿到 1~4 個行動槽，
+  // 日誌筆數跟著浮動，斷言就會時好時壞。
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
   const engine = new BattleEngine([caster, ally], [enemyA, enemyB], {
     luckEvents: { enabled: false }, actionTargetResolver: ({ caster: actor }) =>
       actor === caster ? [ally] : null
   });
   engine.executeTurn();
   const damageLogs = engine.logger.logs.filter(log => log.type === 'DAMAGE');
-  assert.ok(damageLogs.length >= 3);
+  // 兩段 DAMAGE 各至少產生一筆。第二段的 hits: 2 不會生效——這個技能掛在
+  // normalAttack 上，普攻的段數一律由速度差的連擊公式決定（雙方同速即 1 段）。
+  assert.ok(damageLogs.length >= 2);
   assert.ok(damageLogs.every(log => log.targetId === ally.id));
   assert.equal(enemyA.stats.hp, enemyA.stats.maxHp);
   assert.equal(enemyB.stats.hp, enemyB.stats.maxHp);
@@ -48,6 +53,7 @@ test('action target resolver does not redirect healing in a mixed skill', t => {
   caster.normalAttack = skill;
   t.mock.method(Formulas, 'isHit', () => true);
   t.mock.method(Formulas, 'isCounter', () => false);
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
   const engine = new BattleEngine([caster, ally], [enemy], {
     luckEvents: { enabled: false }, actionTargetResolver: () => [ally]
   });
@@ -72,13 +78,16 @@ test('side swap mirrors single/all targets for damage, healing and buffs while S
   const skill = new Skill({ id: 'reversed', name: 'reversed', actions: [
     { type: 'HEAL', targetType: 'ALLY_ALL', power: 1 },
     { type: 'DAMAGE', targetType: 'ENEMY_ALL', inheritTarget: false, power: 0.1 },
+    // duration 給大一點：這裡驗的是「標記掛到了哪一邊」，不是它撐幾個行動槽。
+    // duration: 2 會在同一個回合內被接收方自己的行動槽扣完，斷言就變成擲骰。
     { type: 'BUFF', targetType: 'ALLY_ALL', inheritTarget: false,
-      buffs: [{ id: 'reversed_mark', name: 'mark', type: 'MARK', duration: 2 }] },
+      buffs: [{ id: 'reversed_mark', name: 'mark', type: 'MARK', duration: 99 }] },
     { type: 'HEAL', targetType: 'SELF', inheritTarget: false, power: 1 }
   ] });
   caster.normalAttack = skill;
   t.mock.method(Formulas, 'isHit', () => true);
   t.mock.method(Formulas, 'isCounter', () => false);
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
   const engine = new BattleEngine([caster, ally], [enemyA, enemyB], {
     luckEvents: { enabled: false }, actionTargetResolver: () => ({ swapSides: true })
   });
@@ -112,6 +121,7 @@ test('skill selection resolver can replace a support skill without changing team
   caster.normalAttack = attack;
   t.mock.method(Formulas, 'isHit', () => true);
   t.mock.method(Formulas, 'isCounter', () => false);
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
   const engine = new BattleEngine([caster, ally], [enemy], {
     luckEvents: { enabled: false },
     skillSelectionResolver: ({ skill }) => skill === heal ? attack : undefined
