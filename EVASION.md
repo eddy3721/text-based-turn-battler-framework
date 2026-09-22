@@ -64,8 +64,46 @@ const roll = () => ({
 - 反擊的還擊不進入這條路：反擊已經通過了自己的判定，必定命中，不會落空。
 - 只作用於命中判定失敗。被格擋、零傷害、DOT 與直接 `takeDamage` 都不算閃避，
   那些仍走 `BEFORE_DAMAGE`／`blockMethod`。
-- 被動不應在這裡改變戰鬥狀態。它描述的是一件已經發生完的事，框架不會重新結算；
-  要對「被躲掉」產生後果，請用傷害側的觸發器。
+- **`ON_EVADE` 不要改變戰鬥狀態，它只負責描述。** 它跑在 MISS 日誌組句之前，
+  所以既拿不到 logger，在這裡印東西也會排到「但是被 X 躲開了！」前面。
+  要對「被躲掉」產生後果，用下面的 `AFTER_EVADE`。
+
+## AFTER_EVADE：閃避的反應側（1.0.16）
+
+`ON_EVADE` 只能描述。想讓「躲掉」本身有後果——回資源、疊層數、掛增益——
+宣告 `trigger: 'AFTER_EVADE'`，它在 **MISS 日誌送出之後**對防守方執行。
+
+```js
+// 綠龜護符：輕裝翻滾落地即起，躲一次回 6 SP。
+const turtle = () => ({
+  id: 'turtle', trigger: 'AFTER_EVADE',
+  action: (self, evasion, logger, engine) => {
+    const restored = self.restoreSp(6, logger);
+    if (restored <= 0) return;
+    logger?.addLog({ type: 'SP_RECOVER', actorId: self.id, value: restored,
+      message: `${self.name} 落地即起，回復 ${restored} SP！` });
+  }
+});
+```
+
+    a 攻擊，但是被 b 用翻滾躲開了！
+    b 落地即起，回復 6 SP！
+
+**為什麼是新的觸發器，而不是給 `ON_EVADE` 加 logger。** 兩件事的時點不同：
+描述必須在組句之前，反應必須在組句之後。把 logger 交給 `ON_EVADE`，後果就會
+印在「躲掉了」前面——先看到結果，才看到原因。這不是參數問題，是階段問題。
+
+**在此之前這類設計無處可掛。** 這一節原本寫著「請用傷害側的觸發器」，
+但落空根本不會進 `takeDamage`，從 `BEFORE_DAMAGE` 到 `AFTER_ATTACK_RECEIVED`
+一個都不會響——傷害側對落空是全啞的，那句話等於沒有給出路。
+
+- 簽章 `(self, evasion, logger, engine)`，與傷害側的觸發器一致；
+  `enabled(self, evasion)` 同樣可用。
+- 收到的 `evasion` 就是 `ON_EVADE` 剛填完的那一個，讀得到 `evadeMethod`。
+- 每一個落空的擊各觸發一次，與 `ON_EVADE` 同頻。
+- 防守方已陣亡時不執行；`engine.result` 出現後停止。
+- **開放的是副作用，不是重新結算。** 這一擊已經確定落空，在這裡做什麼都不會
+  讓它變成命中。
 
 `evadeMethod` 有值時會一併寫進 `MISS` 日誌，遊戲層要據此上標籤或換樣式時
 不必再去解析訊息字串。

@@ -35,6 +35,49 @@ class BattleEngine {
     this.dialogueLogged = new Set();
     this.counterSource = null;
     this.luckEventsEnabled = options.luckEvents?.enabled ?? true;
+    this.hitResolver = options.hitResolver;
+    this.roundStart = options.roundStart;
+    this.actionTargetResolver = options.actionTargetResolver;
+    this.skillSelectionResolver = options.skillSelectionResolver;
+    this.actionTargetOverride = null;
+  }
+
+  // Resolve one action-slot redirect before the selected skill begins. An array preserves the
+  // original fixed hostile-DAMAGE override. { swapSides: true } mirrors every non-SELF target
+  // type for the whole cast, including damage, healing, recovery and buffs.
+  withActionTargetOverride(caster, resolution, run) {
+    const previous = this.actionTargetOverride;
+    this.actionTargetOverride = Array.isArray(resolution) && resolution.length
+      ? { caster, targets: resolution }
+      : resolution?.swapSides === true ? { caster, swapSides: true } : null;
+    try { return run(); }
+    finally { this.actionTargetOverride = previous; }
+  }
+
+  resolveActionTargetType(caster, targetType) {
+    const override = this.actionTargetOverride;
+    if (!override || override.caster !== caster || !override.swapSides) return targetType;
+    return ({
+      ENEMY_SINGLE: 'ALLY_SINGLE', ENEMY_ALL: 'ALLY_ALL',
+      ALLY_SINGLE: 'ENEMY_SINGLE', ALLY_ALL: 'ENEMY_ALL'
+    })[targetType] || targetType;
+  }
+
+  resolveActionTargets(caster, action, targets) {
+    const override = this.actionTargetOverride;
+    const targetType = action.targetType || 'ENEMY_SINGLE';
+    if (!override?.targets || override.caster !== caster || action.type !== 'DAMAGE' ||
+        !['ENEMY_SINGLE', 'ENEMY_ALL'].includes(targetType)) return targets;
+    return override.targets.filter(target => target.isAlive);
+  }
+
+  resolveHit(caster, target, skill, action, hitIndex) {
+    const adjustment = this.hitResolver?.({ caster, target, skill, action, hitIndex,
+      turn: this.currentTurn, engine: this }) || {};
+    const hit = Formulas.isHit(caster, target, action.accuracy || 1,
+      adjustment.hitRateModifier || 0);
+    adjustment.afterRoll?.(hit);
+    return { hit, evadeMessage: adjustment.evadeMessage, hitMessage: adjustment.hitMessage };
   }
 
   // Living enemy auras affect only the ordinary active-skill lottery. Equal ids
@@ -299,6 +342,7 @@ class BattleEngine {
   executeTurn() {
     if (this.result) return;
     this.logger.addLog({ type: 'TURN_START', turn: this.currentTurn, message: `--- 第 ${this.currentTurn} 回合 ---` });
+    this.roundStart?.(this);
 
     const allEntities = [...this.teamA, ...this.teamB];
     for (const entity of allEntities) if (entity.isAlive) entity.syncFatigue(this.logger);
@@ -377,6 +421,18 @@ class BattleEngine {
           selectedSkill = entity.normalAttack;
         }
 
+        if (selectedSkill && this.skillSelectionResolver) {
+          const replacement = this.skillSelectionResolver({
+            caster: entity, skill: selectedSkill, allies, enemies, engine: this
+          });
+          if (replacement !== undefined) {
+            if (!replacement || typeof replacement.execute !== 'function') {
+              throw new Error('skillSelectionResolver must return a skill or undefined.');
+            }
+            selectedSkill = replacement;
+          }
+        }
+
         if (selectedSkill) {
           // 標記「這個行動槽是普攻」，派發型普攻轉發給子技能後仍收得到逐擊費用。
           // 一併看 dealsBasicAttackDamage：沒表態的普攻維持原本行為，這個旗標
@@ -384,7 +440,16 @@ class BattleEngine {
           entity.inBasicAttackSlot = selectedSkill === entity.normalAttack
             && selectedSkill.dealsBasicAttackDamage === true;
           try {
-            selectedSkill.execute(entity, allies, enemies, this.logger, this);
+            const redirected = this.actionTargetResolver?.({
+              caster: entity, skill: selectedSkill, allies, enemies, engine: this
+            });
+            const swapsSides = redirected && !Array.isArray(redirected) &&
+              typeof redirected === 'object' && redirected.swapSides === true;
+            if (redirected != null && !Array.isArray(redirected) && !swapsSides) {
+              throw new Error('actionTargetResolver must return an array, { swapSides: true }, null or undefined.');
+            }
+            this.withActionTargetOverride(entity, redirected,
+              () => selectedSkill.execute(entity, allies, enemies, this.logger, this));
           } finally {
             entity.inBasicAttackSlot = false;
           }

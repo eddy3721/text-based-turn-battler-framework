@@ -203,7 +203,7 @@ class Formulas {
   }
 
   // 命中判定
-  static isHit(attacker, defender, skillAccuracy = 1) {
+  static isHit(attacker, defender, skillAccuracy = 1, hitRateModifier = 0) {
     const hitStat = Math.max(0, statsOf(attacker).hit || 0);
     const evaStat = Math.max(0, statsOf(defender).eva || 0);
 
@@ -214,7 +214,7 @@ class Formulas {
     // 命中率加成：每 1 點 hit 提供 1% 額外命中
     const hitBonus = hitStat / 100;
 
-    let finalHitRate = skillAccuracy + hitBonus - evadeChance;
+    let finalHitRate = skillAccuracy + hitBonus - evadeChance + hitRateModifier;
 
     // 保底命中率 10% (0.1)，確保不會出現「完全閃避」的情況
     finalHitRate = Math.max(0.1, finalHitRate);

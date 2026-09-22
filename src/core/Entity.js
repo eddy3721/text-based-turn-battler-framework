@@ -92,6 +92,10 @@ class Entity {
   // evadeMethod 是片段，交給預設文案拼成「但是被 X 用某某躲開了！」，跟 blockMethod
   // 完全同型；evadeMessage 是整句覆寫，留給拼不出來的演出（例如身體散開飄在空中）。
   // 兩個都不設就維持原本的預設句，既有單位的戰報一字不變。
+  //
+  // 這條路只負責「怎麼描述」，所以刻意不收 logger 也不收 engine：它跑在 MISS 日誌
+  // **之前**，在這裡送日誌會讓後果印在「被躲開了」那句話前面。要對躲掉這件事
+  // 產生後果請用 AFTER_EVADE（見下）。
   resolveEvasion(context = {}) {
     const evasion = { ...context, target: this, evadeMethod: null, evadeMessage: null };
     for (const passive of [...this.passives]) {
@@ -100,6 +104,29 @@ class Entity {
       passive.action?.(this, evasion);
     }
     return evasion;
+  }
+
+  // 閃避的反應側（1.0.16）：在 MISS 日誌送出**之後**，對防守方跑一次。
+  //
+  // 為什麼要多一個觸發器，而不是把 logger 塞給 ON_EVADE：
+  //
+  // ON_EVADE 的契約是「描述一件已經發生完的事」，它必須跑在組句之前，
+  // 所以它印的任何東西都會排在「但是被 X 躲開了！」前面——先講後果再講發生什麼，
+  // 順序是反的。這不是加個參數能解決的，是兩件事該分兩個時點。
+  //
+  // 而「躲掉就回資源」這類設計在此之前**完全無處可掛**：落空不會進 takeDamage，
+  // 傷害側從 BEFORE_DAMAGE 到 AFTER_ATTACK_RECEIVED 一個都不會響。
+  // 舊文件叫人「改用傷害側的觸發器」，但那一側對落空是全啞的，等於沒有出路。
+  //
+  // 開放的是副作用，不是重新結算：這一擊已經確定落空，這裡做什麼都不會讓它命中。
+  runEvadeReactions(evasion, logger, engine) {
+    if (!this.isAlive) return;
+    for (const passive of [...this.passives]) {
+      if (engine?.result) break;
+      if (passive.trigger !== 'AFTER_EVADE') continue;
+      if (passive.enabled && !passive.enabled(this, evasion)) continue;
+      passive.action?.(this, evasion, logger, engine);
+    }
   }
 
   // Skill records the triggering hit first; direct damage callers settle immediately.

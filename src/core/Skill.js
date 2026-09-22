@@ -309,12 +309,22 @@ class Skill {
 
       // 2. 決定目標 (是否延續上一段的目標)
       const inherit = action.inheritTarget !== false;
-      if (action.type === 'DAMAGE' && forcedTargets) {
+      const baseTargetType = action.targetType || 'ENEMY_SINGLE';
+      const targetType = context?.resolveActionTargetType
+        ? context.resolveActionTargetType(caster, baseTargetType)
+        : baseTargetType;
+      const swappedSides = targetType !== baseTargetType;
+      if (action.type === 'DAMAGE' && forcedTargets && !swappedSides) {
         currentTargets = forcedTargets.filter(target => target.isAlive);
         forcedTargets = null;
       } else if (!inherit || currentTargets.length === 0) {
-        // 不延續，或是目前還沒有目標，就依照本段的 targetType 抓取
-        currentTargets = this._selectTargets(action.targetType || 'ENEMY_SINGLE', caster, allies, enemies);
+        // 不延續，或是目前還沒有目標，就依照本段（可能經敵我反轉）的 targetType 抓取。
+        currentTargets = this._selectTargets(targetType, caster, allies, enemies);
+      }
+      // A legacy fixed-target redirect replaces hostile damage targets after ordinary and
+      // explicitly-forced targeting. Side swaps were already applied to targetType above.
+      if (action.type === 'DAMAGE' && context?.resolveActionTargets) {
+        currentTargets = context.resolveActionTargets(caster, action, currentTargets);
       }
 
       // 如果本段依然找不到目標，就跳過本段效果
@@ -363,9 +373,14 @@ class Skill {
             const hitIndex = i + 1;
 
             // A successful counter has already won its reaction check, so its reply cannot miss.
-            if (!context?.counterSource && !action.ignoreInvincible && !Formulas.isHit(caster, target, action.accuracy || 1)) {
+            const hitRoll = !context?.counterSource && !action.ignoreInvincible
+              ? (context?.resolveHit?.(caster, target, this, action, hitIndex)
+                || { hit: Formulas.isHit(caster, target, action.accuracy || 1) })
+              : { hit: true };
+            if (!hitRoll.hit) {
               // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
-              const evasion = target.resolveEvasion({ caster, skill: this, action, hitIndex, hits, isNormalAttack });
+              const evasion = target.resolveEvasion(
+                { caster, skill: this, action, hitIndex, hits, isNormalAttack });
               logger.addLog({
                 type: 'MISS',
                 actorId: caster.id,
@@ -376,14 +391,19 @@ class Skill {
                 ...(evasion.evadeMethod ? { evadeMethod: evasion.evadeMethod } : {}),
                 // 防守方的整句覆寫排在攻擊方 action.message 之前：閃避方式是只有
                 // 防守方知道的事，攻擊方的技能文案寫不出「對手是怎麼躲掉的」。
-                message: evasion.evadeMessage || composeMessage(
+                message: hitRoll.evadeMessage || evasion.evadeMessage || composeMessage(
                   action,
                   makeContext(this, caster, { target, targets: [target], hitIndex, evadeMethod: evasion.evadeMethod }),
                   { isComboHit: hits > 1 && i > 0, isHitLanded: false }
                 )
               });
+              // 反應側排在 MISS 之後：先讓戰報說「躲掉了」，後果才接在下一行。
+              target.runEvadeReactions(evasion, logger, context);
               continue;
             }
+
+            if (hitRoll.hitMessage) logger.addLog({ type: 'BOSS_DIALOGUE',
+              actorId: target.id, skillId: this.id, message: hitRoll.hitMessage });
 
             // 每一擊各自判定：多段技能挨的刀多，給對手的機會就該多。
             if (context?.tryCounter(caster, target, this,
