@@ -1,4 +1,5 @@
 const Buff = require('./Buff');
+const { EMPTY_TAGS } = require('../utils/Tags');
 const { Sanity } = require('./Sanity');
 const { createBodyParts, selectBodyPart, damageBodyPart } = require('./BodyParts');
 const FATIGUE_SEVERITY = { NORMAL: 0, TIRED: 1, EXHAUSTED: 2 };
@@ -57,7 +58,8 @@ class Entity {
   // BEFORE_DAMAGE is repeatable. Its action mutates this hit's context.damage.
   // HP_BELOW retains its existing one-shot behavior.
   takeDamage(amount, logger, context = {}) {
-    const result = { ...context, source: context.source || (context.action?.type === 'DAMAGE' ? 'ATTACK' : 'DIRECT'),
+    // 沒帶標籤的傷害（環境、幸運事件、直接扣血）一律是空陣列，讀取端不必判空。
+    const result = { ...context, tags: context.tags ?? EMPTY_TAGS, source: context.source || (context.action?.type === 'DAMAGE' ? 'ATTACK' : 'DIRECT'),
       target: this, damage: amount, actualDamage: 0, lethal: false, blocked: false, blockMethod: null };
     if (!this.isAlive) return { ...result, damage: 0 };
     const partMultiplier = context.action?.partDamageMultiplier ?? 1;

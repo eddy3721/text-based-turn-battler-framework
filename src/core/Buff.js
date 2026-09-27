@@ -1,9 +1,13 @@
+const { normalizeTags } = require('../utils/Tags');
+
 class Buff {
-  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false }) {
+  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false, tags }) {
     if (!['positive', 'negative', 'neutral'].includes(polarity) || typeof dispellable !== 'boolean' || typeof invincible !== 'boolean') {
       throw new Error('Invalid buff polarity, dispellable or invincible');
     }
     this.polarity = polarity;
+    // 自由標籤，DOT 扣血時放進 hit.tags，見 TAGS.md。
+    this.tags = normalizeTags(tags, `Buff "${id}"`);
     this.dispellable = dispellable;
     this.invincible = invincible;
     this.id = id;
@@ -56,7 +60,7 @@ class Buff {
   // 進入回合前觸發 (例如中毒扣血)
   onPreTurn(entity, logger, context) {
     if (this.type === 'DOT') {
-      const outcome = entity.takeDamage(this.value, logger, { source: 'DOT', buffId: this.id, deferReactions: true });
+      const outcome = entity.takeDamage(this.value, logger, { source: 'DOT', buffId: this.id, tags: this.tags, deferReactions: true });
       logger.addLog({
         type: 'BUFF_EFFECT',
         actorId: entity.id,

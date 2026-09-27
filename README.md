@@ -22,6 +22,7 @@ npm test       # 執行測試
 | [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除與傷害縮放 |
 | [FATIGUE.md](FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
 | [SANITY.md](SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
+| [TAGS.md](TAGS.md) | 技能／傷害段／Buff 的自由標籤，傷害結算時合併成 `hit.tags` |
 | [AGGRO.md](AGGRO.md) | 仇恨值如何加權目標抽選，以及用 Buff 做嘲諷與隱蔽 |
 | [SKILL_MODIFIERS.md](SKILL_MODIFIERS.md) | 技能施放率 `skillCastRate`、無視防禦與敵方光環 |
 | [LUCK_EVENTS.md](LUCK_EVENTS.md) | 幸運事件（紫／紅）與遞減曲線 |
@@ -199,7 +200,7 @@ result.logs.forEach((log, index) => {
 npm install github:eddy3721/text-based-turn-battler-framework
 
 # 或裝打包好的 tarball（適合部署環境無法存取外部 repo 時）
-npm install ./vendor/text-based-turn-battler-framework-1.0.21.tgz
+npm install ./vendor/text-based-turn-battler-framework-1.0.23.tgz
 ```
 
 引用方式都是：`const { BattleEngine } = require('text-based-turn-battler-framework');`

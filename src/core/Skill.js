@@ -1,4 +1,5 @@
 const Formulas = require('../utils/Formulas');
+const { normalizeTags, mergeTags } = require('../utils/Tags');
 
 /**
  * 戰報文字。
@@ -139,7 +140,7 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
 
 class Skill {
   constructor({ id, name, actions = [], tier = 'standard', counterStyle = 'summary',
-    uncounterable = false, counterChanceMultiplier = 1 }) {
+    uncounterable = false, counterChanceMultiplier = 1, tags }) {
     // 打錯字若安靜地退回 summary，就只會看到「反擊怎麼沒照我寫的演出」，
     // 而那跟「這場剛好沒反擊」在戰報上長得一樣。
     if (!['summary', 'detailed'].includes(counterStyle)) {
@@ -174,6 +175,11 @@ class Skill {
           (action.type !== 'DAMAGE' || typeof action.uncounterable !== 'boolean')) {
         throw new Error('uncounterable requires a DAMAGE action and a boolean');
       }
+      // 段落標籤只給傷害段：BUFF 段的標籤寫在各筆 buff 設定上，由 DOT 自己帶著走。
+      if (action.tags !== undefined && action.type !== 'DAMAGE') {
+        throw new Error('action tags require a DAMAGE action');
+      }
+      normalizeTags(action.tags, `Skill "${id}" action`);
     }
     this.id = id;
     this.name = name;
@@ -184,6 +190,8 @@ class Skill {
     this.uncounterable = uncounterable;
     // 每一擊的被反擊機率倍率；1 維持原率，0 仍保留判定語意但不會成功。
     this.counterChanceMultiplier = counterChanceMultiplier;
+    // 自由標籤，框架不解讀，見 TAGS.md。
+    this.tags = normalizeTags(tags, `Skill "${id}"`);
     this.actions = actions; // 多段動作陣列
   }
 
@@ -375,6 +383,7 @@ class Skill {
           const isNormalAttack = options.basicCounter
             || this === caster.normalAttack || caster.inBasicAttackSlot === true;
           let hits = action.hits || 1;
+          const tags = mergeTags(this.tags, normalizeTags(action.tags, `Skill "${this.id}" action`));
           
           if (!options.basicCounter && (isNormalAttack || action.combo)) {
             hits = Formulas.getCombos(caster, target);
@@ -395,7 +404,7 @@ class Skill {
             if (!hitRoll.hit) {
               // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
               const evasion = target.resolveEvasion(
-                { caster, skill: this, action, hitIndex, hits, isNormalAttack });
+                { caster, skill: this, action, hitIndex, hits, isNormalAttack, tags });
               logger.addLog({
                 type: 'MISS',
                 actorId: caster.id,
@@ -442,7 +451,7 @@ class Skill {
 
             if (action.damageMultiplier !== undefined) damage = Math.floor(damage * action.damageMultiplier);
             const outcome = target.takeDamage(damage, logger, {
-              caster, skill: this, action, hitIndex, hits, isCrit, isNormalAttack,
+              caster, skill: this, action, hitIndex, hits, isCrit, isNormalAttack, tags,
               isCounter: !!context?.counterSource, deferReactions: true
             });
             if (outcome.actualDamage > 0 && !outcome.isCounter && caster.team !== target.team) {
