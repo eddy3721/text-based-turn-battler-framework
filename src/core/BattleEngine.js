@@ -121,7 +121,7 @@ class BattleEngine {
   }
 
   withSkill(caster, skill, run) {
-    if (this.result || this.skillCallStack.some(call => call.caster === caster && call.skillId === skill.id)) return;
+    if (caster.isPanicked?.() || this.result || this.skillCallStack.some(call => call.caster === caster && call.skillId === skill.id)) return;
     this.skillCallStack.push({ caster, skillId: skill.id });
     try { return run(); }
     finally { this.skillCallStack.pop(); }
@@ -143,7 +143,7 @@ class BattleEngine {
     // 宣告不可反擊的招式或擊在擲骰前就排除，不消耗判定。
     if (skill?.uncounterable || action?.uncounterable) return false;
     if (target.actionDisabled || this.counterSource || this.result || !caster.isAlive || !target.canAct()) return false;
-    if (!Formulas.isCounter(caster, target)) return false;
+    if (!Formulas.isCounter(caster, target, skill?.counterChanceMultiplier ?? 1)) return false;
     const callChain = this.skillCallStack.filter(call => call.caster === target).map(call => call.skillId);
     const reply = target.counterSkill?.canCast(target, this, { callChain }) ? target.counterSkill : basicCounter;
     if (reply === basicCounter && target.stats.sp < target.getBasicAttackCost()) return false;
@@ -223,7 +223,7 @@ class BattleEngine {
 
   // Calls use the skill's own targeting and metadata, without an action slot or child SP cost.
   castSkill(caster, skillIds, options = {}) {
-    if (!caster.isAlive || this.result) return;
+    if (!caster.isAlive || caster.isPanicked?.() || this.result) return;
     const pool = this.getCastableSkills(caster, skillIds);
     if (!pool.length) return;
     const skill = pool[Math.floor(Math.random() * pool.length)];
@@ -254,7 +254,7 @@ class BattleEngine {
 
   triggerBuffs(entity, event) {
     for (const buff of [...entity.buffs]) {
-      if (!entity.isAlive || this.result) break;
+      if (!entity.isAlive || (event === 'BEFORE_ACTION' && entity.isPanicked?.()) || this.result) break;
       if (!entity.buffs.includes(buff) || buff.trigger !== event || buff.remainingTriggers <= 0) continue;
       if (event === 'ROUND_START') {
         if (buff.appliedRound === this.currentTurn || buff.lastTriggeredRound === this.currentTurn) continue;
@@ -309,6 +309,7 @@ class BattleEngine {
     this.logger.addLog({ type: 'SUMMON', actorId: caster.id, targetId: id,
       skillId: skill.id, isNormalAttack: false,
       message: skill.summonMessage(action, caster, entity) });
+    entity.sanity?.announce(entity, this.logger, this, this.currentTurn);
   }
 
   // 一次性跑完戰鬥
@@ -342,6 +343,12 @@ class BattleEngine {
   executeTurn() {
     if (this.result) return;
     this.logger.addLog({ type: 'TURN_START', turn: this.currentTurn, message: `--- 第 ${this.currentTurn} 回合 ---` });
+    for (const entity of [...this.teamA, ...this.teamB]) {
+      if (!entity.sanity) continue;
+      if (entity.sanity.initialPanicPending) entity.sanity.announce(entity, this.logger, this);
+      entity.sanity.round = this.currentTurn;
+      if (this.result) return;
+    }
     this.roundStart?.(this);
 
     const allEntities = [...this.teamA, ...this.teamB];
@@ -366,6 +373,11 @@ class BattleEngine {
       }
       if (this.result) break;
 
+      if (entity.isPanicked()) {
+        entity.tickBuffs();
+        continue;
+      }
+
       // 2. 判斷是否能行動
       // 這是每個行動槽唯一一次 STUN 擲骰的地方；必定暈眩與機率型麻痺都走這條。
       const stun = entity.rollStun();
@@ -379,6 +391,10 @@ class BattleEngine {
         this.triggerBuffs(entity, 'BEFORE_ACTION');
         if (this.result) break;
         if (!entity.isAlive) continue;
+        if (entity.isPanicked()) {
+          entity.tickBuffs();
+          continue;
+        }
         if (this.tryLuckEvent(entity)) {
           entity.tickBuffs();
           continue;
@@ -433,7 +449,7 @@ class BattleEngine {
           }
         }
 
-        if (selectedSkill) {
+        if (selectedSkill && !entity.isPanicked()) {
           // 標記「這個行動槽是普攻」，派發型普攻轉發給子技能後仍收得到逐擊費用。
           // 一併看 dealsBasicAttackDamage：沒表態的普攻維持原本行為，這個旗標
           // 才真的是選擇加入的，不會默默改掉既有 Boss 的收費。
@@ -449,19 +465,29 @@ class BattleEngine {
               throw new Error('actionTargetResolver must return an array, { swapSides: true }, null or undefined.');
             }
             this.withActionTargetOverride(entity, redirected,
-              () => selectedSkill.execute(entity, allies, enemies, this.logger, this));
+              () => { if (!entity.isPanicked()) selectedSkill.execute(entity, allies, enemies, this.logger, this); });
           } finally {
             entity.inBasicAttackSlot = false;
           }
           this.settleDeaths();
           this.checkWinCondition();
-        } else {
+        } else if (!entity.isPanicked()) {
           this.logger.addLog({ type: 'TEXT', actorId: entity.id, message: `${entity.name} 略過了行動 (無技能且無普通攻擊可用)。` });
         }
       }
 
       // 4. Post-turn (減少 Buff 回合數)
       entity.tickBuffs();
+    }
+    const sanityEntities = [...this.teamA, ...this.teamB].filter(entity => entity.sanity);
+    if (sanityEntities.length) this.checkWinCondition();
+    if (!this.result) {
+      for (const entity of sanityEntities) {
+        if (this.result) break;
+        entity.sanity?.endRound(entity, this.logger, this);
+        this.settleDeaths();
+        this.checkWinCondition();
+      }
     }
   }
 

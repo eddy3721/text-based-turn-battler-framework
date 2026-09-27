@@ -102,9 +102,9 @@ class Formulas {
     return COUNTER_CEILING / (1 + Math.exp(-gap / COUNTER_GAP_SCALE));
   }
 
-  static isCounter(attacker, defender) {
-    const chance = Formulas.counterChance(attacker, defender);
-    return chance > 0 && Math.random() < chance;
+  static isCounter(attacker, defender, chanceMultiplier = 1, roll = Math.random()) {
+    const chance = Formulas.counterChance(attacker, defender) * chanceMultiplier;
+    return chance > 0 && roll < chance;
   }
   // 決定行動順序，這裡採用基於速度的權重抽籤
   static determineActionOrder(entities) {

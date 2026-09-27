@@ -9,8 +9,8 @@ npm run demo   # 跑一場完整的示範戰鬥，把戰報印到終端機
 npm test       # 執行測試
 ```
 
-示範戰鬥的原始碼在 [examples/basic.js](examples/basic.js)，它把七種 action type
-各用過一次，是最快看懂「技能資料長什麼樣」的入口。
+示範戰鬥的原始碼在 [examples/basic.js](examples/basic.js)，展示基本 action type，
+是最快看懂「技能資料長什麼樣」的入口；可選理智則見 [examples/sanity.js](examples/sanity.js)。
 
 ### 進階主題
 
@@ -21,6 +21,7 @@ npm test       # 執行測試
 | [DAMAGE_REACTIONS.md](DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
 | [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除與傷害縮放 |
 | [FATIGUE.md](FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
+| [SANITY.md](SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
 | [AGGRO.md](AGGRO.md) | 仇恨值如何加權目標抽選，以及用 Buff 做嘲諷與隱蔽 |
 | [SKILL_MODIFIERS.md](SKILL_MODIFIERS.md) | 技能施放率 `skillCastRate`、無視防禦與敵方光環 |
 | [LUCK_EVENTS.md](LUCK_EVENTS.md) | 幸運事件（紫／紅）與遞減曲線 |
@@ -159,7 +160,7 @@ result.logs.forEach((log, index) => {
 換成跑條 / Action Gauge 系統。
 
 ### 2. 擴充更多類型的 Action (在 `Skill.js`)
-目前 `Skill.js` 的 `actions` 支援七種 `type`：
+目前 `Skill.js` 的 `actions` 支援八種 `type`：
 
 | type | 用途 |
 | --- | --- |
@@ -168,6 +169,7 @@ result.logs.forEach((log, index) => {
 | `HEAL` | 治療，日誌使用實際恢復量 |
 | `BUFF` | 附加狀態效果（`HOT` / `DOT` / `STAT` / `STUN`，見下方 `Buff`） |
 | `RESTORE_SP` | 恢復 SP，輸出 `SP_RECOVER` 日誌 |
+| `CHANGE_SANITY` | 增減已啟用單位的理智，支援正負 `amount`；見 [理智系統](SANITY.md) |
 | `SUMMON` | 召喚增援，需在建立引擎時注入 `summonFactory`（見「召喚與資源恢復」） |
 | `CAST_SKILL` | 呼叫另一個已註冊的技能，需注入 `skillResolver`（見「呼叫已註冊技能與定時效果」） |
 
@@ -197,7 +199,7 @@ result.logs.forEach((log, index) => {
 npm install github:eddy3721/text-based-turn-battler-framework
 
 # 或裝打包好的 tarball（適合部署環境無法存取外部 repo 時）
-npm install ./vendor/text-based-turn-battler-framework-1.0.20.tgz
+npm install ./vendor/text-based-turn-battler-framework-1.0.21.tgz
 ```
 
 引用方式都是：`const { BattleEngine } = require('text-based-turn-battler-framework');`

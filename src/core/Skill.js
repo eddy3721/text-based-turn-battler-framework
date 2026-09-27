@@ -67,6 +67,10 @@ const DefaultText = {
     action: (ctx) => `${ctx.caster.name} 的${ctx.skill.name}`,
     recover: (ctx) => `使 ${ctx.target.name} 回復了 ${ctx.value} SP！`
   },
+  CHANGE_SANITY: {
+    action: (ctx) => `${ctx.caster.name} 的${ctx.skill.name}，`,
+    sanity: (ctx) => `使 ${ctx.target.name} 的理智 ${ctx.before} → ${ctx.after}！`
+  },
   // SUMMON 的 target 是剛生出來的增援實體。
   // fail 是工廠沒有可用增援時的後半段，此時 target 為 null。
   SUMMON: {
@@ -122,6 +126,7 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
 
   if (action.type === 'HEAL') return part(text.action) + part(text.heal);
   if (action.type === 'RESTORE_SP') return part(text.action) + part(text.recover);
+  if (action.type === 'CHANGE_SANITY') return part(text.action) + part(text.sanity);
   if (action.type === 'SUMMON') return part(text.action) + part(text.summon);
   if (action.type === 'BUFF') return part(text.action) + part(text.buff);
   if (action.type === 'TEXT') return part(text.action);
@@ -133,7 +138,8 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
 }
 
 class Skill {
-  constructor({ id, name, actions = [], tier = 'standard', counterStyle = 'summary', uncounterable = false }) {
+  constructor({ id, name, actions = [], tier = 'standard', counterStyle = 'summary',
+    uncounterable = false, counterChanceMultiplier = 1 }) {
     // 打錯字若安靜地退回 summary，就只會看到「反擊怎麼沒照我寫的演出」，
     // 而那跟「這場剛好沒反擊」在戰報上長得一樣。
     if (!['summary', 'detailed'].includes(counterStyle)) {
@@ -142,7 +148,14 @@ class Skill {
     if (typeof uncounterable !== 'boolean') {
       throw new Error(`Skill "${id}" uncounterable must be a boolean.`);
     }
+    if (!Number.isFinite(counterChanceMultiplier) ||
+        counterChanceMultiplier < 0 || counterChanceMultiplier > 1) {
+      throw new Error(`Skill "${id}" counterChanceMultiplier must be between 0 and 1.`);
+    }
     for (const action of actions) {
+      if (action.type === 'CHANGE_SANITY' && !Number.isFinite(action.amount)) {
+        throw new Error('CHANGE_SANITY requires a finite amount');
+      }
       if (action.ignoreInvincible !== undefined && (action.type !== 'DAMAGE' || typeof action.ignoreInvincible !== 'boolean')) {
         throw new Error('ignoreInvincible requires a DAMAGE action and a boolean');
       }
@@ -169,6 +182,8 @@ class Skill {
     this.counterStyle = counterStyle;
     // 整招不進入反擊判定（例如延遲引爆的陷阱），見 COUNTERS.md。
     this.uncounterable = uncounterable;
+    // 每一擊的被反擊機率倍率；1 維持原率，0 仍保留判定語意但不會成功。
+    this.counterChanceMultiplier = counterChanceMultiplier;
     this.actions = actions; // 多段動作陣列
   }
 
@@ -186,7 +201,7 @@ class Skill {
 
   // 判斷是否能發動此技能 (看總體力消耗)
   canCast(entity, context, { ignoreSp = false, callChain = [] } = {}) {
-    if (entity.actionDisabled) return false;
+    if (entity.actionDisabled || entity.isPanicked?.()) return false;
     const totalSpCost = this.actions.reduce((sum, action) => sum + (action.spCost || 0), 0);
     const basicCost = this === entity.normalAttack && this.dealsBasicAttackDamage
       ? entity.getBasicAttackCost() : 0;
@@ -244,7 +259,7 @@ class Skill {
 
   // 執行技能
   execute(caster, allies, enemies, logger, context, options = {}) {
-    if (caster.actionDisabled) return;
+    if (caster.actionDisabled || caster.isPanicked?.()) return;
     // Aggregate actual HP loss across every hit of this cast, separately per target.
     const receivedAttacks = new Map();
     const run = () => {
@@ -282,7 +297,7 @@ class Skill {
     }
 
     for (const action of this.actions) {
-      if (!caster.isAlive || context?.result) break;
+      if (!caster.isAlive || caster.isPanicked?.() || context?.result) break;
       if (action.type === 'SUMMON' && !context?.canSummon(caster, action)) continue;
       // 1. 扣除該段 SP
       const cost = options.ignoreSp ? 0 : action.spCost || 0;
@@ -351,7 +366,7 @@ class Skill {
       }
 
       currentTargets.forEach(target => {
-        if (!target.isAlive || !caster.isAlive || context?.result) return;
+        if (!target.isAlive || !caster.isAlive || caster.isPanicked?.() || context?.result) return;
         if (action.requiresDamage && !damagedTargets.has(target)) return;
 
         if (action.type === 'DAMAGE') {
@@ -366,7 +381,7 @@ class Skill {
           }
 
           for (let i = 0; i < hits; i++) {
-            if (!target.isAlive || !caster.isAlive || context?.result) break;
+            if (!target.isAlive || !caster.isAlive || caster.isPanicked?.() || context?.result) break;
             // Pay for the attempt, including misses and attacks intercepted by counters.
             if (isNormalAttack && !caster.spendSp(caster.getBasicAttackCost(), logger)) break;
 
@@ -489,6 +504,11 @@ class Skill {
             )
           });
           target.checkPassives('ON_HP_CHANGE', logger, context);
+        }
+        else if (action.type === 'CHANGE_SANITY') {
+          target.changeSanity(action.amount, logger, { engine: context, caster, skill: this, source: 'SKILL',
+            message: event => composeMessage(action, makeContext(this, caster,
+              { ...event, target, targets: [target] })) });
         }
         else if (action.type === 'RESTORE_SP') {
           const value = target.restoreSp(action.amount || 0);

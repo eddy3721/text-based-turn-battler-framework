@@ -1,11 +1,12 @@
 const Buff = require('./Buff');
+const { Sanity } = require('./Sanity');
 const { createBodyParts, selectBodyPart, damageBodyPart } = require('./BodyParts');
 const FATIGUE_SEVERITY = { NORMAL: 0, TIRED: 1, EXHAUSTED: 2 };
 // 以預設 35% 為準：疲勞 25%、力竭 20%。
 const FATIGUE_CAST_PENALTY = { TIRED: 0.10, EXHAUSTED: 0.15 };
 
 class Entity {
-  constructor({ id, name, team, stats, normalAttack, counterSkill = null, openingSkill = null, skills = [], buffs = [], passives = [], dialogues = {}, parts = [], actionDisabled = false, lockedStats = [], fatigueEnabled = true, normalAttackSpCost = 1 }) {
+  constructor({ id, name, team, stats, normalAttack, counterSkill = null, openingSkill = null, skills = [], buffs = [], passives = [], dialogues = {}, parts = [], actionDisabled = false, lockedStats = [], fatigueEnabled = true, normalAttackSpCost = 1, sanity = false }) {
     if (!Number.isFinite(normalAttackSpCost) || normalAttackSpCost < 0) throw new Error('normalAttackSpCost must be finite and nonnegative');
     this.fatigueEnabled = fatigueEnabled;
     this.normalAttackSpCost = normalAttackSpCost;
@@ -43,6 +44,14 @@ class Entity {
     this.isAlive = this.stats.hp > 0;
     this.parts = createBodyParts(parts);
     this.settledDamage = new WeakSet();
+    this.sanity = sanity === false ? null : new Sanity(sanity);
+  }
+
+  isPanicked() { return this.sanity?.isPanicked() ?? false; }
+
+  changeSanity(delta, logger, context = {}) {
+    if (!Number.isFinite(delta)) throw new Error('Sanity delta must be finite');
+    return this.sanity?.change(this, delta, logger, context) ?? 0;
   }
 
   // BEFORE_DAMAGE is repeatable. Its action mutates this hit's context.damage.
@@ -265,7 +274,7 @@ class Entity {
   // 機率型的判定集中在 rollStun()，由 BattleEngine 在行動槽開頭呼叫剛好一次。
   // 代價是機率型麻痺不影響反擊與幸運事件，只擋主動行動——這是刻意的取捨。
   canAct() {
-    if (!this.isAlive) return false;
+    if (!this.isAlive || this.isPanicked()) return false;
     return !this.buffs.some(b => b.type === 'STUN' && b.chance >= 1);
   }
 
@@ -293,6 +302,7 @@ class Entity {
     // 施放率扣百分點而不是乘倍率，跟 Buff 調整施放率的慣例一致；
     // 在夾限之前扣，才能跟 Buff 的加減互相抵銷。
     effectiveStats.skillCastRate -= FATIGUE_CAST_PENALTY[stage] || 0;
+    if (this.sanity) effectiveStats.skillCastRate += this.sanity.castRateModifier(this);
     if (!Number.isFinite(effectiveStats.skillCastRate)) {
       throw new Error('Effective skillCastRate must be finite');
     }

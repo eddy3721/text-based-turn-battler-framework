@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Entity, Skill, BattleEngine, Formulas } = require('../src');
+const originalIsCounter = Formulas.isCounter;
 
 const strike = (actions = [{ type: 'DAMAGE', hits: 3 }]) => new Skill({ id: 'strike', name: '斬擊', actions });
 // 反擊率有上限（見 Formulas 的 COUNTER_CEILING），點數再高也不可能必定反擊，
@@ -104,6 +105,13 @@ test('counter chance rides the technique gap and never truncates the weaker side
   assert.equal(Formulas.counterChance({ stats: { counter: 1e9 } }, { stats: {} }), 0);
 });
 
+test('isCounter multiplies the final chance without changing the point curve', () => {
+  const equal = { stats: { counter: 100 } };
+  assert.equal(originalIsCounter(equal, equal, 1, 0.03), true, 'default 10% accepts a 3% roll');
+  assert.equal(originalIsCounter(equal, equal, 0.25, 0.03), false, 'quarter rate becomes 2.5%');
+  assert.equal(originalIsCounter(equal, equal, 0.5, 0.03), true, 'half rate becomes 5%');
+});
+
 test('skill reply pays SP, applies damage-gated effects, and falls back without SP', t => {
   const { a, b, engine, run } = setup(t, strike([{ type: 'DAMAGE' }]));
   b.counterSkill = new Skill({ id: 'disarm', name: '劍神流・剝奪劍', actions: [
@@ -152,6 +160,20 @@ test('AoE lets every living target roll on every hit it receives', t => {
   // 兩個目標 × 兩擊 = 四次招架，兩人都毫髮無傷。
   assert.equal(a.stats.hp, 60); assert.equal(b.stats.hp, 100); assert.equal(c.stats.hp, 100);
   assert.equal(engine.logger.logs.filter(l => l.type === 'COUNTER').length, 4);
+});
+
+test('counterChanceMultiplier scales every hit without removing its independent roll', t => {
+  const attack = new Skill({ id: 'reduced', counterChanceMultiplier: 0.25,
+    actions: [{ type: 'DAMAGE', hits: 3 }] });
+  const { engine, run } = setup(t, attack);
+  const multipliers = [];
+  t.mock.method(Formulas, 'isCounter', (attacker, defender, multiplier) => {
+    multipliers.push(multiplier);
+    return false;
+  });
+  run();
+  assert.deepEqual(multipliers, [0.25, 0.25, 0.25]);
+  assert.equal(engine.logger.logs.filter(log => log.type === 'DAMAGE').length, 3);
 });
 
 test('each nested cast rolls separately, but counter-derived skills still cannot counter recursively', t => {
@@ -258,4 +280,13 @@ test('uncounterable must be a boolean on the skill and on a DAMAGE action', () =
   assert.throws(() => new Skill({ id: 'oops', name: 'x', uncounterable: 'yes' }), /must be a boolean/);
   assert.throws(() => new Skill({ id: 'oops', name: 'x', actions: [{ type: 'HEAL', uncounterable: true }] }),
     /uncounterable requires a DAMAGE action/);
+});
+
+test('counterChanceMultiplier defaults to one and rejects values outside zero to one', () => {
+  assert.equal(new Skill({ id: 'default' }).counterChanceMultiplier, 1);
+  assert.equal(new Skill({ id: 'zero', counterChanceMultiplier: 0 }).counterChanceMultiplier, 0);
+  for (const value of [-0.1, 1.1, '0.5', Infinity]) {
+    assert.throws(() => new Skill({ id: 'oops', counterChanceMultiplier: value }),
+      /must be between 0 and 1/);
+  }
 });

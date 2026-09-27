@@ -94,6 +94,24 @@ new Skill({ id: 'bomb', name: '爆炸', uncounterable: true, actions: [...] });
 不把戰報標成反擊，也不影響這招的傷害觸發被動——只拿掉「對手能不能反擊」這一項。
 值必須是布林，寫在非 DAMAGE action 上會在建構時拋錯。
 
+## 技能的反擊率倍率
+
+需要保留逐擊反擊風險、但希望某個技能較不容易被反制時，可在技能層級設定
+`counterChanceMultiplier`：
+
+```js
+new Skill({
+  id: 'sixteen_hits',
+  name: '十六連擊',
+  counterChanceMultiplier: 0.25,
+  actions: [{ type: 'DAMAGE', hits: 16 }]
+});
+```
+
+每一個命中的傷害段仍獨立擲反擊骰，原始反擊率乘上此倍率；例如原率 10%、倍率 0.25，
+每一擊的反擊率就是 2.5%。省略時預設為 1，完全維持既有規則；0 代表每擊反擊率為零。
+值必須是 0 到 1 之間的有限數字。這個參數不改變命中、閃避、防禦、會心或逐段戰報。
+
 Action 可設定 `requiresDamage: true`：只對本次技能執行先前造成過正傷害的目標生效。
 例如 DAMAGE 後接此條件的 BUFF，便能讓繳械在落空、完全格擋、完全招架時不生效。
 省略此設定的既有 BUFF 仍獨立施加。
