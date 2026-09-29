@@ -397,14 +397,17 @@ class Skill {
             const hitIndex = i + 1;
 
             // A successful counter has already won its reaction check, so its reply cannot miss.
-            const hitRoll = !context?.counterSource && !action.ignoreInvincible
-              ? (context?.resolveHit?.(caster, target, this, action, hitIndex)
+            const rolls = !context?.counterSource && !action.ignoreInvincible;
+            // 打不到的目標不擲骰：沒有 untouchable 的戰鬥 RNG 序列一步都不會變。
+            const untouchable = rolls ? target.buffs.find(buff => buff.untouchable) || null : null;
+            const hitRoll = untouchable ? { hit: false }
+              : rolls ? (context?.resolveHit?.(caster, target, this, action, hitIndex)
                 || { hit: Formulas.isHit(caster, target, action.accuracy || 1) })
               : { hit: true };
             if (!hitRoll.hit) {
               // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
               const evasion = target.resolveEvasion(
-                { caster, skill: this, action, hitIndex, hits, isNormalAttack, tags });
+                { caster, skill: this, action, hitIndex, hits, isNormalAttack, tags, untouchable });
               logger.addLog({
                 type: 'MISS',
                 actorId: caster.id,

@@ -54,6 +54,7 @@ const roll = () => ({
 | `skill`, `action` | 落空的技能與該段動作 |
 | `hitIndex`, `hits` | 第幾擊／總段數 |
 | `isNormalAttack` | 是否為普攻（含速度連擊） |
+| `untouchable` | 造成必定落空的 `untouchable` buff（1.0.24）；一般擲骰落空為 null |
 | `evadeMethod`, `evadeMessage` | 寫入欄位，預設皆為 null |
 
 `enabled(self, evasion)` 的用法與傷害側的觸發器完全一致，回傳 false 就跳過。
@@ -62,6 +63,7 @@ const roll = () => ({
 
 - **每一個落空的擊各自執行一次**，多段技能與速度連擊因此可以逐擊給不同文案。
 - 反擊的還擊不進入這條路：反擊已經通過了自己的判定，必定命中，不會落空。
+- 身上有 `untouchable` buff 時不擲骰、直接落空，同樣走這條路（見 PROTECTION.md）。
 - 只作用於命中判定失敗。被格擋、零傷害、DOT 與直接 `takeDamage` 都不算閃避，
   那些仍走 `BEFORE_DAMAGE`／`blockMethod`。
 - **`ON_EVADE` 不要改變戰鬥狀態，它只負責描述。** 它跑在 MISS 日誌組句之前，

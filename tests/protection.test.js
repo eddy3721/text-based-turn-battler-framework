@@ -50,3 +50,29 @@ test('new optional fields reject malformed configs', () => {
   for (const action of [{ type: 'HEAL', ignoreInvincible: true }, { type: 'DAMAGE', damageMultiplier: -1 }])
     assert.throws(() => new Skill({ actions: [action] }));
 });
+test('untouchable misses without rolling and lets the defender describe it', t => {
+  const { a, b, engine, attack } = setup(t);
+  const isHit = t.mock.method(Formulas, 'isHit', () => true);
+  const reacted = [];
+  b.passives.push({ trigger: 'ON_EVADE', enabled: (self, evasion) => !!evasion.untouchable,
+    action: (self, evasion) => { evasion.evadeMessage = `${evasion.untouchable.name}裡的 ${self.name} 沒被碰到`; } });
+  b.passives.push({ trigger: 'AFTER_EVADE', action: (self, evasion) => reacted.push(evasion.untouchable.id) });
+  b.addBuff({ id: 'deep', name: '深海', untouchable: true, duration: 2 });
+  attack({ hits: 3 });
+  assert.equal(b.stats.hp, 10000);
+  assert.equal(isHit.mock.callCount(), 0);
+  const misses = engine.logger.logs.filter(log => log.type === 'MISS');
+  assert.equal(misses.length, 3);
+  assert.equal(misses[0].message, '深海裡的 b 沒被碰到');
+  assert.deepEqual(reacted, ['deep', 'deep', 'deep']);
+  assert.equal(a.stats.sp, 100);
+});
+test('untouchable yields to piercing and counters, and leaves DOT alone', t => {
+  const { b, engine, attack } = setup(t);
+  t.mock.method(Formulas, 'calculateDamage', () => 100);
+  b.addBuff({ id: 'deep', name: '深海', untouchable: true, duration: 2 });
+  attack({ ignoreInvincible: true }); assert.equal(b.stats.hp, 9900);
+  b.takeDamage(30, null, { source: 'DOT' }); assert.equal(b.stats.hp, 9870);
+  engine.withCounterSource({ id: 'x' }, () => attack({})); assert.equal(b.stats.hp, 9770);
+  assert.throws(() => new Buff({ untouchable: 'yes' }));
+});

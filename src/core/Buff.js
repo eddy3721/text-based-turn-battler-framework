@@ -1,15 +1,19 @@
 const { normalizeTags } = require('../utils/Tags');
 
 class Buff {
-  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false, tags }) {
-    if (!['positive', 'negative', 'neutral'].includes(polarity) || typeof dispellable !== 'boolean' || typeof invincible !== 'boolean') {
-      throw new Error('Invalid buff polarity, dispellable or invincible');
+  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false, untouchable = false, tags }) {
+    if (!['positive', 'negative', 'neutral'].includes(polarity) || typeof dispellable !== 'boolean' ||
+        typeof invincible !== 'boolean' || typeof untouchable !== 'boolean') {
+      throw new Error('Invalid buff polarity, dispellable, invincible or untouchable');
     }
     this.polarity = polarity;
     // 自由標籤，DOT 扣血時放進 hit.tags，見 TAGS.md。
     this.tags = normalizeTags(tags, `Buff "${id}"`);
     this.dispellable = dispellable;
     this.invincible = invincible;
+    // 打不到：DAMAGE 的每一擊不擲命中骰，直接落空（見 PROTECTION.md）。
+    // 跟 invincible 的差別是「沒碰到」而不是「碰到了但沒受傷」，所以走閃避那條路。
+    this.untouchable = untouchable;
     this.id = id;
     this.name = name;
     this.type = type; // 'HOT', 'DOT', 'STAT', 'STUN'
