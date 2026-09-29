@@ -19,7 +19,7 @@ npm test       # 執行測試
 | [COUNTERS.md](COUNTERS.md) | 一般反擊、技能反擊與傷害條件效果 |
 | [EVASION.md](EVASION.md) | 落空時由防守方描述自己怎麼躲的（`ON_EVADE` / `AFTER_EVADE`） |
 | [DAMAGE_REACTIONS.md](DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
-| [ACTIONS.md](ACTIONS.md) | 行動槽出手後通知全場（`AFTER_ACTION`） |
+| [ACTIONS.md](ACTIONS.md) | 行動槽出手後通知全場（`AFTER_ACTION`）、回合開始的被動（`ROUND_START`） |
 | [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除與傷害縮放 |
 | [FATIGUE.md](FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
 | [SANITY.md](SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |

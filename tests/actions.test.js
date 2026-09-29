@@ -64,3 +64,27 @@ test('AFTER_ACTION passives receive logger and engine, and deaths they cause are
   assert.equal(victim.isAlive, false);
   assert.equal(engine.result, 'TEAM_A');
 });
+
+test('ROUND_START passives run once per round for living units, after the encounter roundStart', () => {
+  const seen = [];
+  const hero = make('hero', 'A', { passives: [{
+    trigger: 'ROUND_START',
+    action: (self, { round }, logger, engine) => {
+      assert.ok(logger && engine);
+      seen.push([round, self.stats.hp]);
+    }
+  }] });
+  const foe = make('foe', 'B');
+  foe.actionDisabled = true;
+  hero.actionDisabled = true;
+  const engine = new BattleEngine([hero], [foe], {
+    luckEvents: { enabled: false }, maxTurns: 5,
+    roundStart: engine => { hero.stats.hp -= 10; seen.push(['encounter', engine.currentTurn]); }
+  });
+
+  engine.executeTurn();
+  engine.currentTurn++;
+  engine.executeTurn();
+
+  assert.deepEqual(seen, [['encounter', 1], [1, 990], ['encounter', 2], [2, 980]]);
+});

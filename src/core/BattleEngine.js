@@ -154,6 +154,20 @@ class BattleEngine {
     this.checkWinCondition();
   }
 
+  // 回合開始時（遭遇戰的 roundStart 之後、疲勞與 ROUND_START Buff 之前）
+  // 對每個存活單位執行 trigger: 'ROUND_START' 的被動。見 ACTIONS.md。
+  notifyRoundStart() {
+    if (this.result) return;
+    const round = { round: this.currentTurn };
+    for (const entity of [...this.teamA, ...this.teamB]) {
+      if (this.result) break;
+      if (!entity.isAlive) continue;
+      entity.runDamagePassives('ROUND_START', round, this.logger, this);
+    }
+    this.settleDeaths();
+    this.checkWinCondition();
+  }
+
   tryCounter(caster, target, skill, { action, hitIndex = 1, isComboHit = false } = {}) {
     // 宣告不可反擊的招式或擊在擲骰前就排除，不消耗判定。
     if (skill?.uncounterable || action?.uncounterable) return false;
@@ -365,6 +379,8 @@ class BattleEngine {
       if (this.result) return;
     }
     this.roundStart?.(this);
+    this.notifyRoundStart();
+    if (this.result) return;
 
     const allEntities = [...this.teamA, ...this.teamB];
     for (const entity of allEntities) if (entity.isAlive) entity.syncFatigue(this.logger);
