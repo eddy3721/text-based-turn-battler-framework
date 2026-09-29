@@ -139,6 +139,21 @@ class BattleEngine {
     }
   }
 
+  // 一個行動槽真的出手之後（普攻或技能，死亡已結算），通知場上所有存活單位，
+  // 包含出手者自己與隊友。暈眩、喘息、恐慌、略過都不算出手；反擊與
+  // CAST_SKILL 觸發的技能屬於同一個行動槽，不另外通知。見 ACTIONS.md。
+  notifyAction(actor, skill) {
+    if (this.result) return;
+    const action = { actor, skill };
+    for (const observer of [...this.teamA, ...this.teamB]) {
+      if (this.result) break;
+      if (!observer.isAlive) continue;
+      observer.runDamagePassives('AFTER_ACTION', action, this.logger, this);
+    }
+    this.settleDeaths();
+    this.checkWinCondition();
+  }
+
   tryCounter(caster, target, skill, { action, hitIndex = 1, isComboHit = false } = {}) {
     // 宣告不可反擊的招式或擊在擲骰前就排除，不消耗判定。
     if (skill?.uncounterable || action?.uncounterable) return false;
@@ -471,6 +486,7 @@ class BattleEngine {
           }
           this.settleDeaths();
           this.checkWinCondition();
+          this.notifyAction(entity, selectedSkill);
         } else if (!entity.isPanicked()) {
           this.logger.addLog({ type: 'TEXT', actorId: entity.id, message: `${entity.name} 略過了行動 (無技能且無普通攻擊可用)。` });
         }
