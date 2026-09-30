@@ -87,6 +87,16 @@ class Entity {
       result.blockMethod = protection.name || '無敵';
     }
     result.damage = Math.max(0, Math.floor(result.damage));
+    // 保命（1.0.27）：所有倍率、BEFORE_DAMAGE 與無敵都算完，這一擊仍會致死時才執行。
+    // 排在最後，攻擊方臨時插進來的增傷被動才蓋不掉「停在 1 HP」。見 PROTECTION.md。
+    if (result.damage > 0 && result.damage >= this.stats.hp) {
+      for (const passive of [...this.passives]) {
+        if (passive.trigger !== 'LAST_STAND') continue;
+        if (passive.enabled && !passive.enabled(this, result)) continue;
+        if (passive.action) passive.action(this, result, logger);
+      }
+      result.damage = Math.max(0, Math.floor(result.damage));
+    }
     if (result.damage === 0) return result;
     result.actualDamage = Math.min(this.stats.hp, result.damage);
     this.stats.hp -= result.damage;

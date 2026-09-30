@@ -99,3 +99,28 @@ test('damageTaken filter limits the multiplier to the hits it names; buffs stack
   assert.throws(() => new Buff({ id: 'x', damageTaken: { multiplier: -1 } }), /damageTaken/);
   assert.throws(() => new Buff({ id: 'x', damageTaken: { multiplier: 1, filter: 'int' } }), /damageTaken/);
 });
+
+test('LAST_STAND runs after amplifiers appended later and only on lethal hits', t => {
+  const { a, b, attack } = setup(t);
+  const seen = [];
+  b.passives.push({ id: 'endure', trigger: 'LAST_STAND',
+    enabled: (self, hit) => { seen.push(hit.damage); return true; },
+    action: (self, hit) => { hit.damage = self.stats.hp - 1; } });
+  attack({});
+  assert.deepEqual(seen, [], 'a non-lethal hit does not reach LAST_STAND');
+  const before = b.stats.hp;
+  assert.ok(before > 1);
+  // 攻擊方在防守方身上臨時追加的增傷，排在 endure 之後。
+  b.passives.push({ id: 'amp', trigger: 'BEFORE_DAMAGE', action: (_self, hit) => { hit.damage *= 1000; } });
+  attack({});
+  assert.equal(b.stats.hp, 1);
+  assert.equal(b.isAlive, true);
+  assert.equal(seen.length, 1);
+  b.takeDamage(50, null, { source: 'DOT' });
+  assert.equal(b.stats.hp, 1, 'DOT reaches it too; hp - 1 is 0 damage');
+  const blocked = new Entity({ id: 'c', name: 'c', team: 'B', stats: { hp: 10, maxHp: 10 },
+    passives: [{ id: 'never', trigger: 'LAST_STAND', action: () => { throw new Error('should not run'); } }] });
+  blocked.takeDamage(5, null, { source: 'DOT' });
+  assert.equal(blocked.stats.hp, 5);
+  assert.equal(a.isAlive, true);
+});

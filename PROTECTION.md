@@ -49,5 +49,24 @@ are not. Several matching buffs multiply together. A multiplier below 1 is a
 plain damage reduction. Buffs without the field change nothing and consume no
 random numbers.
 
+## Last stand (1.0.27)
+
+A passive with `trigger: 'LAST_STAND'` runs **after** every other damage step —
+`damageTaken`, all `BEFORE_DAMAGE` passives, invincibility and flooring — and
+only when the hit would still kill its holder (`hit.damage >= hp`). It has the
+same signature as `BEFORE_DAMAGE`, `(self, hit, logger)`, and lowers
+`hit.damage` to survive, typically to `hp - 1`. The result is floored again.
+
+Surviving at 1 HP used to be written as a `BEFORE_DAMAGE` passive, but those run
+in array order. Attackers that amplify a single hit by pushing a temporary
+`BEFORE_DAMAGE` passive onto the target append it **after** the holder's own
+passives, so the amplifier re-multiplied the already-clamped damage and the
+"cannot die" effect lost. `LAST_STAND` is a separate, final phase, so nothing
+added later in the array can undo it. Mitigation (blocks, reductions) still
+belongs in `BEFORE_DAMAGE`; only "this hit must not kill" belongs here.
+
+Applies to attacks, DOT, luck events and direct `takeDamage` alike. Code that
+sets `hp = 0` directly bypasses it, as it bypasses every damage hook.
+
 All fields are opt-in; pre-existing skills keep their RNG sequence and behavior.
 Tests: `node --test tests/protection.test.js`, and the full `npm test` suite.

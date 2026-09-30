@@ -20,7 +20,7 @@ npm test       # 執行測試
 | [EVASION.md](EVASION.md) | 落空時由防守方描述自己怎麼躲的（`ON_EVADE` / `AFTER_EVADE`） |
 | [DAMAGE_REACTIONS.md](DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
 | [ACTIONS.md](ACTIONS.md) | 行動槽出手後通知全場（`AFTER_ACTION`）、回合開始的被動（`ROUND_START`） |
-| [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除與傷害縮放 |
+| [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除、傷害縮放與保命（`LAST_STAND`） |
 | [FATIGUE.md](FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
 | [SANITY.md](SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
 | [TAGS.md](TAGS.md) | 技能／傷害段／Buff 的自由標籤，傷害結算時合併成 `hit.tags` |
@@ -238,6 +238,10 @@ Skill 以最終 damage 產生 BLOCK 戰報（value 為減傷後傷害）。完�
 血量變動被動；後續 BUFF 動作仍獨立生效。既有 HP_BELOW 被動維持一次性觸發。
 
 格擋文字使用技能的 `text.action` / `text.combo` 前綴，加上 `text.block`。
+
+「這一擊不能致死、停在 1 HP」不要寫在 `BEFORE_DAMAGE`：那裡照陣列順序執行，攻擊方臨時插進來的
+增傷會排在後面把它蓋掉。改用 `trigger: 'LAST_STAND'`，它在所有倍率、`BEFORE_DAMAGE` 與無敵之後、
+而且只在這一擊仍會致死時執行，見 [PROTECTION.md](PROTECTION.md)。
 `block` 可為字串或 context 回呼，預設依最終傷害顯示完全格擋或部分減傷。
 被動不組裝整句。多段技能的前綴由技能自行決定，並不強制使用「第 X 擊」。
 `action.message` 仍優先於所有片段，需自行根據 `ctx.blocked`、`ctx.blockMethod`
