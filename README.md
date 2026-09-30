@@ -168,7 +168,7 @@ result.logs.forEach((log, index) => {
 | --- | --- |
 | `TEXT` | 只輸出一行戰報，不結算任何數值（用於起手台詞、演出） |
 | `DAMAGE` | 傷害，支援 `hits` 多段、`power` 倍率、`statKey`、`accuracy` |
-| `HEAL` | 治療，日誌使用實際恢復量 |
+| `HEAL` | 治療，日誌使用實際恢復量；`stat` 預設 `atk`，可改單一能力值或 `{ atk: 1, int: 1 }` 權重表（回復量 = Σ 能力值 × 權重 × `power`） |
 | `BUFF` | 附加狀態效果（`HOT` / `DOT` / `STAT` / `STUN`，見下方 `Buff`） |
 | `RESTORE_SP` | 恢復 SP，輸出 `SP_RECOVER` 日誌 |
 | `CHANGE_SANITY` | 增減已啟用單位的理智，支援正負 `amount`；見 [理智系統](SANITY.md) |

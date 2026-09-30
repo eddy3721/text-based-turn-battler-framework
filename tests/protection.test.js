@@ -76,3 +76,26 @@ test('untouchable yields to piercing and counters, and leaves DOT alone', t => {
   engine.withCounterSource({ id: 'x' }, () => attack({})); assert.equal(b.stats.hp, 9770);
   assert.throws(() => new Buff({ untouchable: 'yes' }));
 });
+test('damageTaken scales matching attacks before BEFORE_DAMAGE and skips DOT by default', t => {
+  const { b, attack } = setup(t);
+  t.mock.method(Formulas, 'calculateDamage', () => 100);
+  b.addBuff({ id: 'brittle', name: '易傷', duration: 2, damageTaken: { multiplier: 1.5 } });
+  attack({}); assert.equal(b.stats.hp, 9850);
+  b.takeDamage(30, null, { source: 'DOT' }); assert.equal(b.stats.hp, 9820);
+
+  // 倍率先乘，BEFORE_DAMAGE 的減半再從放大後的 150 扣。
+  b.passives.push({ trigger: 'BEFORE_DAMAGE', action: (self, hit) => { hit.damage *= 0.5; } });
+  attack({}); assert.equal(b.stats.hp, 9745);
+});
+test('damageTaken filter limits the multiplier to the hits it names; buffs stack', t => {
+  const { b, attack } = setup(t);
+  t.mock.method(Formulas, 'calculateDamage', () => 100);
+  const arts = hit => hit.action?.stat === 'int';
+  b.addBuff({ id: 'arts', name: '法術易傷', duration: 2, damageTaken: { multiplier: 1.5, filter: arts } });
+  attack({}); assert.equal(b.stats.hp, 9900);
+  attack({ stat: 'int' }); assert.equal(b.stats.hp, 9750);
+  b.addBuff({ id: 'all', name: '易傷', duration: 2, damageTaken: { multiplier: 2 } });
+  attack({ stat: 'int' }); assert.equal(b.stats.hp, 9450);
+  assert.throws(() => new Buff({ id: 'x', damageTaken: { multiplier: -1 } }), /damageTaken/);
+  assert.throws(() => new Buff({ id: 'x', damageTaken: { multiplier: 1, filter: 'int' } }), /damageTaken/);
+});

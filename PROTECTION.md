@@ -34,5 +34,20 @@ scales calculated damage after defense, combo decay and critical damage, before
 BEFORE_DAMAGE reactions, with floor rounding. This supports split hits without
 subtracting defense extra times. It does not change hit count or SP.
 
+## Damage taken multiplier (1.0.26)
+
+`damageTaken: { multiplier, filter? }` on a Buff scales the damage its holder
+receives, with floor rounding, **before** `BEFORE_DAMAGE` passives and
+invincibility: a vulnerability enlarges the hit first, then blocks and
+reductions work on the enlarged number. `filter(hit)` receives the same `hit`
+object `BEFORE_DAMAGE` sees (`source`, `action`, `skill`, `caster`, `tags`, …)
+and decides whether this buff applies; the framework does not know what
+"magic" or "fire" means, so the game says it here (e.g.
+`hit => hit.action?.stat === 'int'`). Without a filter only DAMAGE attacks
+(`hit.source === 'ATTACK'`) are scaled; DOT and direct/environmental damage
+are not. Several matching buffs multiply together. A multiplier below 1 is a
+plain damage reduction. Buffs without the field change nothing and consume no
+random numbers.
+
 All fields are opt-in; pre-existing skills keep their RNG sequence and behavior.
 Tests: `node --test tests/protection.test.js`, and the full `npm test` suite.

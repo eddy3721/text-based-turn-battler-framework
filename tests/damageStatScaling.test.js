@@ -37,3 +37,26 @@ test('DAMAGE keeps atk as its default and rejects unknown stat names', t => {
   const broken = new Skill({ id: 'broken', actions: [{ type: 'DAMAGE', stat: 'magic' }] });
   assert.throws(() => broken.execute(caster, [caster], [target], logger()), /unknown attacker stat "magic"/);
 });
+
+test('HEAL action.stat accepts a weight table that sums several caster stats', () => {
+  const caster = entity('medic', { atk: 40, int: 100 });
+  const target = entity('patient', { hp: 100 });
+  const blended = new Skill({ id: 'blended', actions: [
+    { type: 'HEAL', targetType: 'ALLY_SINGLE', stat: { atk: 1, int: 0.5 }, power: 2 }
+  ] });
+  const log = logger();
+
+  blended.execute(caster, [target], [], log);
+
+  assert.equal(log.logs[0].value, (40 * 1 + 100 * 0.5) * 2);
+  assert.equal(target.stats.hp, 280);
+
+  const broken = new Skill({ id: 'broken', actions: [
+    { type: 'HEAL', targetType: 'ALLY_SINGLE', stat: { atk: 1, magic: 1 } }
+  ] });
+  assert.throws(() => broken.execute(caster, [target], [], logger()), /unknown caster stat "magic"/);
+  const nan = new Skill({ id: 'nan', actions: [
+    { type: 'HEAL', targetType: 'ALLY_SINGLE', stat: { atk: 'much' } }
+  ] });
+  assert.throws(() => nan.execute(caster, [target], [], logger()), /non-numeric weight/);
+});

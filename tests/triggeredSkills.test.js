@@ -289,3 +289,13 @@ test('a pending charge survives into the next round; dead rain owner cannot act 
   assert.equal(engine.result, null);
   assert.equal(engine.logger.logs.slice(before).filter(l => l.skillId === 'wait').length, 0);
 });
+
+test('HOT on a full-HP holder stays silent', t => {
+  const { a, engine } = setup(t, {});
+  a.addBuff({ id: 'hot', name: 'hot', type: 'HOT', value: 5, duration: 2 });
+  a.buffs[0].onPreTurn(a, engine.logger, engine);
+  assert.equal(engine.logger.logs.filter(l => l.type === 'BUFF_EFFECT').length, 0);
+  a.stats.hp -= 2;
+  a.buffs[0].onPreTurn(a, engine.logger, engine);
+  assert.equal(engine.logger.logs.filter(l => l.type === 'BUFF_EFFECT').length, 1);
+});

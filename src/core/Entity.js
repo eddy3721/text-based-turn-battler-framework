@@ -68,6 +68,12 @@ class Entity {
       ? selectBodyPart(this.parts) : null;
     if (part) Object.assign(result, { partId: part.id, partName: part.name, partDamage: 0,
       partDurability: part.durability, partMaxDurability: part.maxDurability, brokePart: false });
+    // 承傷倍率排在 BEFORE_DAMAGE 之前：易傷先放大，格擋、減傷再從放大後的數字扣。
+    for (const buff of this.buffs) {
+      if (buff.damageTaken && buff.damageTaken.filter(result)) {
+        result.damage = Math.floor(result.damage * buff.damageTaken.multiplier);
+      }
+    }
     for (const passive of [...this.passives]) {
       if (passive.trigger !== 'BEFORE_DAMAGE') continue;
       if (passive.enabled && !passive.enabled(this, result)) continue;

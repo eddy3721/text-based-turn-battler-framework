@@ -1,7 +1,7 @@
 const { normalizeTags } = require('../utils/Tags');
 
 class Buff {
-  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false, untouchable = false, tags }) {
+  constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false, untouchable = false, tags, damageTaken }) {
     if (!['positive', 'negative', 'neutral'].includes(polarity) || typeof dispellable !== 'boolean' ||
         typeof invincible !== 'boolean' || typeof untouchable !== 'boolean') {
       throw new Error('Invalid buff polarity, dispellable, invincible or untouchable');
@@ -14,6 +14,17 @@ class Buff {
     // 打不到：DAMAGE 的每一擊不擲命中骰，直接落空（見 PROTECTION.md）。
     // 跟 invincible 的差別是「沒碰到」而不是「碰到了但沒受傷」，所以走閃避那條路。
     this.untouchable = untouchable;
+    // 承傷倍率（1.0.26）：持有者受到的傷害先乘上 multiplier，再跑 BEFORE_DAMAGE。
+    // filter(hit) 決定哪些傷害算數（例如只放大法術）；省略時只作用在 DAMAGE 攻擊，
+    // DOT 與環境／直接扣血不受影響。見 PROTECTION.md。
+    if (damageTaken !== undefined) {
+      const { multiplier, filter } = damageTaken || {};
+      if (!Number.isFinite(multiplier) || multiplier < 0 ||
+        (filter !== undefined && typeof filter !== 'function')) {
+        throw new Error(`Buff "${id}" damageTaken needs a finite nonnegative multiplier and an optional filter function.`);
+      }
+      this.damageTaken = { multiplier, filter: filter || (hit => hit.source === 'ATTACK') };
+    }
     this.id = id;
     this.name = name;
     this.type = type; // 'HOT', 'DOT', 'STAT', 'STUN'
@@ -74,6 +85,9 @@ class Buff {
       entity.finishDamage(outcome, logger, context);
     } else if (this.type === 'HOT') {
       const heal = Math.min(entity.stats.maxHp - entity.stats.hp, this.value);
+      // 滿血時什麼都沒發生：不印「回復了 0 點」。全隊持續回血在戰報裡每槽洗一行空話，
+      // 而且沒有回復就沒有血量變化，也不必跑血量被動（1.0.26）。
+      if (heal <= 0) return;
       logger.addLog({
         type: 'BUFF_EFFECT',
         actorId: entity.id,

@@ -494,10 +494,19 @@ class Skill {
           // （例如綁 int，讓輔助型角色的養成方向跟輸出型分開）。
           // 拼錯字若靜默退回 atk 或回 0，會變成「這招好像沒什麼用」這種
           // 得盯著戰報算數字才發現的問題，所以直接擋掉。
-          const statKey = action.stat || 'atk';
-          const scale = caster.stats[statKey];
-          if (typeof scale !== 'number') {
-            throw new Error(`HEAL action of skill "${this.id}" references unknown caster stat "${statKey}".`);
+          // action.stat 也可以是 { atk: 1, int: 1 } 這種權重表：回復量同時吃好幾項能力值，
+          // 讓「打得動的補師」不必在輸出與回復之間二選一（最終值 = Σ 能力值 × 權重 × power）。
+          const weights = typeof action.stat === 'object' && action.stat !== null
+            ? action.stat : { [action.stat || 'atk']: 1 };
+          let scale = 0;
+          for (const [statKey, weight] of Object.entries(weights)) {
+            if (typeof caster.stats[statKey] !== 'number') {
+              throw new Error(`HEAL action of skill "${this.id}" references unknown caster stat "${statKey}".`);
+            }
+            if (!Number.isFinite(weight)) {
+              throw new Error(`HEAL action of skill "${this.id}" has a non-numeric weight for stat "${statKey}".`);
+            }
+            scale += caster.stats[statKey] * weight;
           }
           // 讀的是原始 stats 而不是生效值，所以同一次施放中前面幾段的 buff
           // 放大不了這裡的回復量，兩段的先後順序沒有差別。
