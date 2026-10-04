@@ -301,6 +301,8 @@ new Skill({ id: 'random_move', actions: [
 `target.finishDamage(outcome, logger, engine)`。DOT 已使用此流程。
 直接治療可傳 `entity.heal(amount, logger, { engine })`，讓血量被動取得引擎；
 HEAL 技能與 HOT 也會在回復日誌之後傳入引擎、檢查血量被動。
+DOT 與 HOT 每次結算都記成 `BUFF_EFFECT`，並帶 `buffId` 與 `buffType`（`'DOT'` / `'HOT'`），
+顯示端可依此區分傷害與回復。
 
 Entity 可設定 `dialogues: { opening, death, victory }`（各為台詞本體字串）。
 引擎補上戰鬥名稱及引號，產生 `BOSS_DIALOGUE`；各事件只播一次，平手不播勝利台詞。

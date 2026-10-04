@@ -79,6 +79,8 @@ class Buff {
       logger.addLog({
         type: 'BUFF_EFFECT',
         actorId: entity.id,
+        buffId: this.id,
+        buffType: 'DOT',
         message: `${entity.name} 受到 ${this.name} 影響，受到了 ${outcome.damage} 點傷害！`,
         value: outcome.damage
       });
@@ -88,9 +90,12 @@ class Buff {
       // 滿血時什麼都沒發生：不印「回復了 0 點」。全隊持續回血在戰報裡每槽洗一行空話，
       // 而且沒有回復就沒有血量變化，也不必跑血量被動（1.0.26）。
       if (heal <= 0) return;
+      // buffType 讓顯示端分得出這行是持續傷害還是持續回復，不必比對訊息文字。
       logger.addLog({
         type: 'BUFF_EFFECT',
         actorId: entity.id,
+        buffId: this.id,
+        buffType: 'HOT',
         message: `${entity.name} 受到 ${this.name} 影響，回復了 ${heal} 點生命值！`,
         value: heal
       });

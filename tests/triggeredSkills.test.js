@@ -299,3 +299,14 @@ test('HOT on a full-HP holder stays silent', t => {
   a.buffs[0].onPreTurn(a, engine.logger, engine);
   assert.equal(engine.logger.logs.filter(l => l.type === 'BUFF_EFFECT').length, 1);
 });
+
+test('DOT and HOT ticks say which kind of buff produced them', t => {
+  const { a, engine } = setup(t, {});
+  a.stats.hp -= 10;
+  a.addBuff({ id: 'regen', name: 'regen', type: 'HOT', value: 3, duration: 2 });
+  a.addBuff({ id: 'poison', name: 'poison', type: 'DOT', value: 1, duration: 2 });
+  a.buffs.forEach(buff => buff.onPreTurn(a, engine.logger, engine));
+  const ticks = engine.logger.logs.filter(l => l.type === 'BUFF_EFFECT')
+    .map(l => [l.buffId, l.buffType]);
+  assert.deepEqual(ticks, [['regen', 'HOT'], ['poison', 'DOT']]);
+});
