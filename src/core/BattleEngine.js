@@ -39,7 +39,11 @@ class BattleEngine {
     this.roundStart = options.roundStart;
     this.actionTargetResolver = options.actionTargetResolver;
     this.skillSelectionResolver = options.skillSelectionResolver;
+    this.battleEnd = options.battleEnd;
     this.actionTargetOverride = null;
+    // 每個真的出手的行動槽一筆：{ actor, skill, turn, start, end }，start／end 是 logger.logs 的索引
+    // （含 start、不含 end）。反擊、觸發技能與 AFTER_ACTION 的後果都算在該槽裡。見 ACTIONS.md。
+    this.actionSlots = [];
   }
 
   // Resolve one action-slot redirect before the selected skill begins. An array preserves the
@@ -359,6 +363,10 @@ class BattleEngine {
       this.logger.addLog({ type: 'TEXT', message: `雙方大戰300回合，沒有分出勝負` });
     }
 
+    // 勝負已定、BATTLE_END 之前：遭遇戰可以在這裡補上結尾演出（例如回顧 actionSlots 的精彩重播）。
+    // 這時已經不能改變結果，回傳值不使用。
+    this.battleEnd?.(this);
+
     this.logger.addLog({ type: 'BATTLE_END', message: `戰鬥結束，獲勝方: ${this.result}` });
 
     return {
@@ -486,6 +494,7 @@ class BattleEngine {
           // 才真的是選擇加入的，不會默默改掉既有 Boss 的收費。
           entity.inBasicAttackSlot = selectedSkill === entity.normalAttack
             && selectedSkill.dealsBasicAttackDamage === true;
+          const slotStart = this.logger.logs.length;
           try {
             const redirected = this.actionTargetResolver?.({
               caster: entity, skill: selectedSkill, allies, enemies, engine: this
@@ -503,6 +512,9 @@ class BattleEngine {
           this.settleDeaths();
           this.checkWinCondition();
           this.notifyAction(entity, selectedSkill);
+          // 分出勝負的那一槽也要記，notifyAction 在有結果時不通知，但這一槽確實出手了。
+          this.actionSlots.push({ actor: entity, skill: selectedSkill, turn: this.currentTurn,
+            start: slotStart, end: this.logger.logs.length });
         } else if (!entity.isPanicked()) {
           this.logger.addLog({ type: 'TEXT', actorId: entity.id, message: `${entity.name} 略過了行動 (無技能且無普通攻擊可用)。` });
         }

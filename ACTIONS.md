@@ -47,3 +47,22 @@
 原本只有 Buff 能掛在回合開始（`trigger: 'ROUND_START'` 加 `skillIds`），而且必須透過一個技能執行、
 有觸發次數上限；想「每回合記下自己的狀態」這種不出手、不留日誌的常駐被動無處可掛。
 二階堂希羅的死に戻り用它記下每回合開始時的 HP／SP。
+
+## 行動槽紀錄與戰鬥結尾（`actionSlots`／`battleEnd`，1.0.28）
+
+`engine.actionSlots` 依序記下每個**真的出手**的行動槽（什麼算出手同 `AFTER_ACTION`）：
+
+```js
+{ actor, skill, turn, start, end }   // start／end 是 engine.logger.logs 的索引，含 start、不含 end
+```
+
+這一槽的反擊、觸發技能、死亡宣告與 `AFTER_ACTION` 的後果都落在 `[start, end)` 裡。
+分出勝負的那一槽也會記（`AFTER_ACTION` 在有結果時不再通知，但那一槽確實出手了）。
+回合開頭的 DOT／HOT、暈眩、喘息、幸運事件不屬於任何槽。
+
+`options.battleEnd(engine)` 在勝負已定（含回合用盡的平手）、`BATTLE_END` 日誌**之前**執行一次，
+用來補結尾演出，例如回顧 `actionSlots` 挑出「精彩重播」。這時已經不能改變結果，回傳值不使用。
+
+原本戰鬥結束時沒有任何掛勾：`openingLogs` 只有開頭，想在結尾補東西只能在呼叫端
+事後改寫 `result.logs`，而那時已經看不到每一段日誌是誰、在哪一槽打出來的。
+第一個使用者是 mydoujin 第 41 層小美的精彩重播。
