@@ -176,6 +176,10 @@ class Skill {
         throw new Error('uncounterable requires a DAMAGE action and a boolean');
       }
       // 段落標籤只給傷害段：BUFF 段的標籤寫在各筆 buff 設定上，由 DOT 自己帶著走。
+      if (action.hitOrder !== undefined && (action.type !== 'DAMAGE' || !['target', 'wave'].includes(action.hitOrder) ||
+        (action.hitOrder === 'wave' && action.combo))) {
+        throw new Error(`Skill "${id}" hitOrder must be 'target' or 'wave' on a DAMAGE action without combo.`);
+      }
       if (action.tags !== undefined && action.type !== 'DAMAGE') {
         throw new Error('action tags require a DAMAGE action');
       }
@@ -241,9 +245,11 @@ class Skill {
   }
 
   // 選擇目標的輔助函式
-  _selectTargets(targetType, caster, allies, enemies) {
+  _selectTargets(targetType, caster, allies, enemies, { excludeSelf = false } = {}) {
     const aliveEnemies = enemies.filter(e => e.isAlive);
-    const aliveAllies = allies.filter(e => e.isAlive);
+    // excludeSelf 只在被操控的反轉下開啟（見 BattleEngine.swapExcludesSelf）。
+    // 隊上只剩自己時就沒有目標，這一段跳過，不會改打自己。
+    const aliveAllies = allies.filter(e => e.isAlive && !(excludeSelf && e === caster));
 
     switch (targetType) {
       case 'ENEMY_SINGLE':
@@ -271,7 +277,11 @@ class Skill {
     // Aggregate actual HP loss across every hit of this cast, separately per target.
     const receivedAttacks = new Map();
     const run = () => {
-      const result = this._execute(caster, allies, enemies, logger, context, { ...options, receivedAttacks });
+      // 出招前問一次敵方（BEFORE_SKILL_CAST，1.0.35），他們可以壓低這一招所有傷害段的傷害。
+      const cast = context?.notifySkillCasting?.(caster, this);
+      const castDamageMultiplier = cast?.damageMultiplier ?? 1;
+      const result = this._execute(caster, allies, enemies, logger, context,
+        { ...options, receivedAttacks, castDamageMultiplier });
       for (const [target, hit] of receivedAttacks) {
         target.runDamagePassives('AFTER_ATTACK_RECEIVED', hit, logger, context);
         context?.settleDeaths();
@@ -333,16 +343,24 @@ class Skill {
       // 2. 決定目標 (是否延續上一段的目標)
       const inherit = action.inheritTarget !== false;
       const baseTargetType = action.targetType || 'ENEMY_SINGLE';
+      // 沒寫 targetType 的 TEXT 只是扣 SP、印開場白，不算「挑目標」，不觸發延後的目標判定。
+      const settles = action.type !== 'TEXT' || action.targetType !== undefined;
+      const pending = context?.actionTargetOverride?.pending === true && context.actionTargetOverride.caster === caster;
       const targetType = context?.resolveActionTargetType
-        ? context.resolveActionTargetType(caster, baseTargetType)
+        ? context.resolveActionTargetType(caster, baseTargetType, { settle: settles })
         : baseTargetType;
       const swappedSides = targetType !== baseTargetType;
-      if (action.type === 'DAMAGE' && forcedTargets && !swappedSides) {
+      // 反轉下的指定目標：透過 engine.targetPool／selectTargets 挑的已經站在反轉後那一邊，照用；
+      // 直接從 enemies 挑的會打錯邊，作廢後照反轉後的 targetType 重抽（1.0.41 之前一律作廢）。
+      if (action.type === 'DAMAGE' && forcedTargets && (!swappedSides ||
+          context?.forcedTargetsFollowSwap?.(caster, baseTargetType, forcedTargets))) {
         currentTargets = forcedTargets.filter(target => target.isAlive);
         forcedTargets = null;
-      } else if (!inherit || currentTargets.length === 0) {
+      } else if (!inherit || currentTargets.length === 0 || (pending && swappedSides)) {
+        // 第三個條件：反轉是這一段才判定出來的，前面沒寫 targetType 的 TEXT 抓到的還是反轉前那一邊，不能延續。
         // 不延續，或是目前還沒有目標，就依照本段（可能經敵我反轉）的 targetType 抓取。
-        currentTargets = this._selectTargets(targetType, caster, allies, enemies);
+        currentTargets = this._selectTargets(targetType, caster, allies, enemies,
+          { excludeSelf: swappedSides && Boolean(context?.swapExcludesSelf?.(caster)) });
       }
       // A legacy fixed-target redirect replaces hostile damage targets after ordinary and
       // explicitly-forced targeting. Side swaps were already applied to targetType above.
@@ -373,6 +391,140 @@ class Skill {
         continue;
       }
 
+      // 一擊的完整判定（扣費、命中、反擊、傷害、日誌）。回傳 false 代表這個目標的後續段數不必再打。
+      // isComboHit 決定開頭用 combo 還是 action 片段：逐波順序下每個目標在每一波都是第一行。
+      const strikeOnce = (target, i, hits, isNormalAttack, tags, isComboHit) => {
+        if (!target.isAlive || !caster.isAlive || caster.isPanicked?.() || context?.result) return false;
+        // Pay for the attempt, including misses and attacks intercepted by counters.
+        if (isNormalAttack && !caster.spendSp(caster.getBasicAttackCost(), logger)) return false;
+
+        const hitIndex = i + 1;
+
+        // A successful counter has already won its reaction check, so its reply cannot miss.
+        const rolls = !context?.counterSource && !action.ignoreInvincible;
+        // 打不到的目標不擲骰：沒有 untouchable 的戰鬥 RNG 序列一步都不會變。
+        const untouchable = rolls ? target.buffs.find(buff => buff.untouchable) || null : null;
+        const hitRoll = untouchable ? { hit: false }
+          : rolls ? (context?.resolveHit?.(caster, target, this, action, hitIndex)
+            || { hit: Formulas.isHit(caster, target, action.accuracy || 1) })
+          : { hit: true };
+        if (!hitRoll.hit) {
+          // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
+          const evasion = target.resolveEvasion(
+            { caster, skill: this, action, hitIndex, hits, isNormalAttack, tags, untouchable });
+          logger.addLog({
+            type: 'MISS',
+            actorId: caster.id,
+      skillId: this.id,
+      skillTier: this.tier,
+      isNormalAttack,
+            targetId: target.id,
+            ...(evasion.evadeMethod ? { evadeMethod: evasion.evadeMethod } : {}),
+            // 防守方的整句覆寫排在攻擊方 action.message 之前：閃避方式是只有
+            // 防守方知道的事，攻擊方的技能文案寫不出「對手是怎麼躲掉的」。
+            message: hitRoll.evadeMessage || evasion.evadeMessage || composeMessage(
+              action,
+              makeContext(this, caster, { target, targets: [target], hitIndex, evadeMethod: evasion.evadeMethod }),
+              { isComboHit, isHitLanded: false }
+            )
+          });
+          // 反應側排在 MISS 之後：先讓戰報說「躲掉了」，後果才接在下一行。
+          target.runEvadeReactions(evasion, logger, context);
+          return true;
+        }
+
+        if (hitRoll.hitMessage) logger.addLog({ type: 'BOSS_DIALOGUE',
+          actorId: target.id, skillId: this.id, message: hitRoll.hitMessage });
+
+        // 每一擊各自判定：多段技能挨的刀多，給對手的機會就該多。
+        if (context?.tryCounter(caster, target, this,
+          { action, hitIndex, isComboHit })) return true;
+
+        const isCrit = Formulas.isCritical(caster);
+        // 傷害預設依賴 atk；action.stat 可讓法術等技能改用 int 或其他能力。
+        // Formulas 會在欄位不存在時直接拋錯，避免拼錯後悄悄打成最低傷害。
+        let damage = Formulas.calculateDamage(caster, target, action.power || 1, action.stat || 'atk',
+          { ignoreDefense: action.ignoreDefense === true });
+        
+        // 如果是普攻或指定連擊，後續打擊傷害遞減 (預設改為 40% 懲罰，避免敏捷過強)
+        if ((isNormalAttack || action.combo) && i > 0) {
+          const decay = action.damageDecay !== undefined ? action.damageDecay : 0.4;
+          damage = Math.max(1, Math.floor(damage * Math.pow(1 - decay, i)));
+        }
+
+        if (isCrit) {
+          damage = Math.floor(damage * Formulas.getCriticalMultiplier(caster));
+        }
+
+        if (action.damageMultiplier !== undefined) damage = Math.floor(damage * action.damageMultiplier);
+        if (options.castDamageMultiplier !== undefined && options.castDamageMultiplier !== 1) {
+          damage = Math.floor(damage * options.castDamageMultiplier);
+        }
+        const outcome = target.takeDamage(damage, logger, {
+          caster, skill: this, action, hitIndex, hits, isCrit, isNormalAttack, tags,
+          isCounter: !!context?.counterSource, deferReactions: true
+        });
+        // 被護盾吃掉的也算打中（1.0.38）：攻擊確實落在對方身上，只是血沒少。
+        if ((outcome.actualDamage > 0 || outcome.shieldAbsorbed > 0) && !outcome.isCounter && caster.team !== target.team) {
+          const summary = options.receivedAttacks.get(target) || { ...outcome, actualDamage: 0, shieldAbsorbed: 0 };
+          summary.actualDamage += outcome.actualDamage;
+          summary.shieldAbsorbed += outcome.shieldAbsorbed || 0;
+          options.receivedAttacks.set(target, summary);
+        }
+        damage = outcome.damage;
+        if (damage > 0) damagedTargets.add(target);
+
+        logger.addLog({
+          type: outcome.blocked ? 'BLOCK' : 'DAMAGE',
+          actorId: caster.id,
+      skillId: this.id,
+      skillTier: this.tier,
+      isNormalAttack,
+          targetId: target.id,
+          value: damage,
+          actualDamage: outcome.actualDamage,
+          ...(outcome.partId ? { partId: outcome.partId, partName: outcome.partName,
+            partDamage: outcome.partDamage || 0, partDurability: outcome.partDurability } : {}),
+          isCrit,
+          blocked: outcome.blocked,
+          ...(outcome.shieldAbsorbed ? { shieldAbsorbed: outcome.shieldAbsorbed } : {}),
+          message: composeMessage(
+            action,
+            makeContext(this, caster, { target, targets: [target], value: damage, isCrit, hitIndex,
+              blocked: outcome.blocked, blockMethod: outcome.blockMethod,
+              partId: outcome.partId, partName: outcome.partName, partDamage: outcome.partDamage }),
+            { isComboHit, isHitLanded: true }
+          )
+        });
+        target.finishDamage(outcome, logger, context);
+        return true;
+      };
+
+      // 逐波（hitOrder: 'wave'，1.0.31）：多段的全體攻擊一段打完所有目標才換下一段，
+      // 第 2 段起先印 text.wave 當過場。固定段數才有「一波」可言，普攻與速度連擊照舊逐目標打完。
+      const isWaveDamage = action.type === 'DAMAGE' && action.hitOrder === 'wave' && !options.basicCounter
+        && this !== caster.normalAttack && caster.inBasicAttackSlot !== true;
+      if (isWaveDamage) {
+        const hits = action.hits || 1;
+        const tags = mergeTags(this.tags, normalizeTags(action.tags, `Skill "${this.id}" action`));
+        const done = new Set();
+        for (let i = 0; i < hits; i++) {
+          if (!caster.isAlive || caster.isPanicked?.() || context?.result) break;
+          const wave = currentTargets.filter(target => target.isAlive && !done.has(target));
+          if (!wave.length) break;
+          if (i > 0 && action.text?.wave !== undefined) {
+            const message = resolvePart(action.text.wave,
+              makeContext(this, caster, { targets: wave, target: wave[0], hitIndex: i + 1 }));
+            if (message) logger.addLog({ type: 'SKILL_TEXT', actorId: caster.id, skillId: this.id,
+              skillTier: this.tier, isNormalAttack: false, message });
+          }
+          for (const target of wave) {
+            if (!strikeOnce(target, i, hits, false, tags, false)) done.add(target);
+          }
+        }
+        continue;
+      }
+
       currentTargets.forEach(target => {
         if (!target.isAlive || !caster.isAlive || caster.isPanicked?.() || context?.result) return;
         if (action.requiresDamage && !damagedTargets.has(target)) return;
@@ -390,103 +542,7 @@ class Skill {
           }
 
           for (let i = 0; i < hits; i++) {
-            if (!target.isAlive || !caster.isAlive || caster.isPanicked?.() || context?.result) break;
-            // Pay for the attempt, including misses and attacks intercepted by counters.
-            if (isNormalAttack && !caster.spendSp(caster.getBasicAttackCost(), logger)) break;
-
-            const hitIndex = i + 1;
-
-            // A successful counter has already won its reaction check, so its reply cannot miss.
-            const rolls = !context?.counterSource && !action.ignoreInvincible;
-            // 打不到的目標不擲骰：沒有 untouchable 的戰鬥 RNG 序列一步都不會變。
-            const untouchable = rolls ? target.buffs.find(buff => buff.untouchable) || null : null;
-            const hitRoll = untouchable ? { hit: false }
-              : rolls ? (context?.resolveHit?.(caster, target, this, action, hitIndex)
-                || { hit: Formulas.isHit(caster, target, action.accuracy || 1) })
-              : { hit: true };
-            if (!hitRoll.hit) {
-              // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
-              const evasion = target.resolveEvasion(
-                { caster, skill: this, action, hitIndex, hits, isNormalAttack, tags, untouchable });
-              logger.addLog({
-                type: 'MISS',
-                actorId: caster.id,
-          skillId: this.id,
-          skillTier: this.tier,
-          isNormalAttack,
-                targetId: target.id,
-                ...(evasion.evadeMethod ? { evadeMethod: evasion.evadeMethod } : {}),
-                // 防守方的整句覆寫排在攻擊方 action.message 之前：閃避方式是只有
-                // 防守方知道的事，攻擊方的技能文案寫不出「對手是怎麼躲掉的」。
-                message: hitRoll.evadeMessage || evasion.evadeMessage || composeMessage(
-                  action,
-                  makeContext(this, caster, { target, targets: [target], hitIndex, evadeMethod: evasion.evadeMethod }),
-                  { isComboHit: hits > 1 && i > 0, isHitLanded: false }
-                )
-              });
-              // 反應側排在 MISS 之後：先讓戰報說「躲掉了」，後果才接在下一行。
-              target.runEvadeReactions(evasion, logger, context);
-              continue;
-            }
-
-            if (hitRoll.hitMessage) logger.addLog({ type: 'BOSS_DIALOGUE',
-              actorId: target.id, skillId: this.id, message: hitRoll.hitMessage });
-
-            // 每一擊各自判定：多段技能挨的刀多，給對手的機會就該多。
-            if (context?.tryCounter(caster, target, this,
-              { action, hitIndex, isComboHit: hits > 1 && i > 0 })) continue;
-
-            const isCrit = Formulas.isCritical(caster);
-            // 傷害預設依賴 atk；action.stat 可讓法術等技能改用 int 或其他能力。
-            // Formulas 會在欄位不存在時直接拋錯，避免拼錯後悄悄打成最低傷害。
-            let damage = Formulas.calculateDamage(caster, target, action.power || 1, action.stat || 'atk',
-              { ignoreDefense: action.ignoreDefense === true });
-            
-            // 如果是普攻或指定連擊，後續打擊傷害遞減 (預設改為 40% 懲罰，避免敏捷過強)
-            if ((isNormalAttack || action.combo) && i > 0) {
-              const decay = action.damageDecay !== undefined ? action.damageDecay : 0.4;
-              damage = Math.max(1, Math.floor(damage * Math.pow(1 - decay, i)));
-            }
-
-            if (isCrit) {
-              damage = Math.floor(damage * Formulas.getCriticalMultiplier(caster));
-            }
-
-            if (action.damageMultiplier !== undefined) damage = Math.floor(damage * action.damageMultiplier);
-            const outcome = target.takeDamage(damage, logger, {
-              caster, skill: this, action, hitIndex, hits, isCrit, isNormalAttack, tags,
-              isCounter: !!context?.counterSource, deferReactions: true
-            });
-            if (outcome.actualDamage > 0 && !outcome.isCounter && caster.team !== target.team) {
-              const summary = options.receivedAttacks.get(target) || { ...outcome, actualDamage: 0 };
-              summary.actualDamage += outcome.actualDamage;
-              options.receivedAttacks.set(target, summary);
-            }
-            damage = outcome.damage;
-            if (damage > 0) damagedTargets.add(target);
-
-            logger.addLog({
-              type: outcome.blocked ? 'BLOCK' : 'DAMAGE',
-              actorId: caster.id,
-          skillId: this.id,
-          skillTier: this.tier,
-          isNormalAttack,
-              targetId: target.id,
-              value: damage,
-              actualDamage: outcome.actualDamage,
-              ...(outcome.partId ? { partId: outcome.partId, partName: outcome.partName,
-                partDamage: outcome.partDamage || 0, partDurability: outcome.partDurability } : {}),
-              isCrit,
-              blocked: outcome.blocked,
-              message: composeMessage(
-                action,
-                makeContext(this, caster, { target, targets: [target], value: damage, isCrit, hitIndex,
-                  blocked: outcome.blocked, blockMethod: outcome.blockMethod,
-                  partId: outcome.partId, partName: outcome.partName, partDamage: outcome.partDamage }),
-                { isComboHit: hits > 1 && i > 0, isHitLanded: true }
-              )
-            });
-            target.finishDamage(outcome, logger, context);
+            if (!strikeOnce(target, i, hits, isNormalAttack, tags, hits > 1 && i > 0)) break;
           }
         } 
         else if (action.type === 'HEAL') {

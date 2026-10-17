@@ -132,3 +132,95 @@ test('skill selection resolver can replace a support skill without changing team
   assert.equal(caster.team, 'A');
   assert.ok(engine.teamA.includes(caster));
 });
+
+test('swapSides with excludeSelf never turns a controlled caster on itself', t => {
+  const caster = entity('caster', 'A');
+  const ally = entity('ally', 'A');
+  const enemy = entity('enemy', 'B');
+  ally.actionDisabled = true;
+  enemy.actionDisabled = true;
+  caster.normalAttack = new Skill({ id: 'controlled', name: 'controlled', actions: [
+    { type: 'DAMAGE', targetType: 'ENEMY_SINGLE', power: 1 },
+    { type: 'DAMAGE', targetType: 'ENEMY_ALL', inheritTarget: false, power: 1 },
+    { type: 'HEAL', targetType: 'ALLY_SINGLE', inheritTarget: false, power: 1 }
+  ] });
+  enemy.stats.hp = 5000;
+  t.mock.method(Formulas, 'isHit', () => true);
+  t.mock.method(Formulas, 'isCounter', () => false);
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
+  // 0 會讓均勻抽籤挑第一個，也就是施放者自己；excludeSelf 之下應該只剩隊友可選。
+  t.mock.method(Math, 'random', () => 0);
+  const engine = new BattleEngine([caster, ally], [enemy], {
+    luckEvents: { enabled: false },
+    actionTargetResolver: ({ caster: actor }) => actor === caster ? { swapSides: true, excludeSelf: true } : null
+  });
+  engine.withActionTargetOverride(caster, { swapSides: true, excludeSelf: true }, () => {
+    assert.equal(engine.swapExcludesSelf(caster), true);
+    assert.equal(engine.swapExcludesSelf(ally), false);
+  });
+  engine.withActionTargetOverride(caster, { swapSides: true }, () => assert.equal(engine.swapExcludesSelf(caster), false));
+  engine.executeTurn();
+  assert.equal(caster.stats.hp, caster.stats.maxHp, 'neither the single nor the all-target swap hits the caster');
+  assert.ok(ally.stats.hp < ally.stats.maxHp);
+  assert.ok(enemy.stats.hp > 5000, 'the mirrored heal still goes to the other side');
+});
+
+test('swapSides with excludeSelf skips the segment when the caster is the only ally left', t => {
+  const caster = entity('caster', 'A');
+  const ally = entity('ally', 'A');
+  const enemy = entity('enemy', 'B');
+  ally.isAlive = false;
+  ally.stats.hp = 0;
+  enemy.actionDisabled = true;
+  caster.normalAttack = new Skill({ id: 'controlled', name: 'controlled', actions: [{ type: 'DAMAGE', power: 1 }] });
+  t.mock.method(Formulas, 'isHit', () => true);
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
+  const engine = new BattleEngine([caster, ally], [enemy], {
+    luckEvents: { enabled: false }, actionTargetResolver: () => ({ swapSides: true, excludeSelf: true })
+  });
+  engine.executeTurn();
+  assert.equal(caster.stats.hp, caster.stats.maxHp);
+  assert.equal(enemy.stats.hp, enemy.stats.maxHp);
+});
+
+test('{ targets, uncounterable } redirects like an array and the recipient never counters (1.0.37)', t => {
+  const caster = entity('caster', 'A');
+  const ally = entity('ally', 'A');
+  const enemy = entity('enemy', 'B');
+  enemy.actionDisabled = true;
+  const skill = new Skill({ id: 'shifted', name: 'shifted', actions: [{ type: 'DAMAGE', power: 0.01 }] });
+  caster.normalAttack = skill;
+  ally.normalAttack = new Skill({ id: 'idle', name: 'idle', actions: [{ type: 'TEXT' }] });
+  t.mock.method(Formulas, 'isHit', () => true);
+  const isCounter = t.mock.method(Formulas, 'isCounter', () => true);
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
+  const engine = new BattleEngine([caster, ally], [enemy], {
+    luckEvents: { enabled: false }, actionTargetResolver: ({ caster: actor }) =>
+      actor === caster ? { targets: [ally], uncounterable: true } : null
+  });
+  engine.executeTurn();
+  assert.ok(ally.stats.hp < ally.stats.maxHp);
+  assert.equal(enemy.stats.hp, enemy.stats.maxHp);
+  assert.equal(caster.stats.hp, caster.stats.maxHp);
+  // 不可反擊在擲骰前就排除，不消耗反擊判定。
+  assert.equal(isCounter.mock.callCount(), 0);
+  assert.ok(engine.logger.logs.every(log => log.type !== 'COUNTER' && !log.isCounter));
+});
+
+test('{ targets } without uncounterable still lets the recipient counter', t => {
+  const caster = entity('caster', 'A');
+  const ally = entity('ally', 'A');
+  const enemy = entity('enemy', 'B');
+  enemy.actionDisabled = true;
+  caster.normalAttack = new Skill({ id: 'shifted', name: 'shifted', actions: [{ type: 'DAMAGE', power: 0.01 }] });
+  t.mock.method(Formulas, 'isHit', () => true);
+  t.mock.method(Formulas, 'isCounter', () => true);
+  t.mock.method(Formulas, 'determineActionOrder', () => [caster]);
+  const engine = new BattleEngine([caster, ally], [enemy], {
+    luckEvents: { enabled: false }, actionTargetResolver: ({ caster: actor }) =>
+      actor === caster ? { targets: [ally] } : null
+  });
+  engine.executeTurn();
+  assert.ok(engine.logger.logs.some(log => log.type === 'COUNTER'));
+  assert.ok(caster.stats.hp < caster.stats.maxHp);
+});

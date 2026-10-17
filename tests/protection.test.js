@@ -124,3 +124,33 @@ test('LAST_STAND runs after amplifiers appended later and only on lethal hits', 
   assert.equal(blocked.stats.hp, 5);
   assert.equal(a.isAlive, true);
 });
+
+test('LAST_STAND logs land after the hit line and before damage reactions (1.0.39)', t => {
+  const { b, engine, attack } = setup(t);
+  const types = () => engine.logger.logs.map(log => log.type);
+  b.passives.push({ id: 'endure', trigger: 'LAST_STAND',
+    action: (self, hit, logger) => {
+      hit.damage = Math.max(0, self.stats.hp - 1);
+      logger.addLog({ type: 'SKILL_TEXT', actorId: self.id, message: `${self.name} 撐住了` });
+    } });
+  b.passives.push({ trigger: 'AFTER_DAMAGE_RECEIVED',
+    action: (self, hit, logger) => logger.addLog({ type: 'TEXT', actorId: self.id, message: 'reaction' }) });
+  t.mock.method(Formulas, 'calculateDamage', () => 99999);
+  attack({});
+  assert.equal(b.stats.hp, 1);
+  const tail = types().slice(-3);
+  assert.deepEqual(tail, ['DAMAGE', 'SKILL_TEXT', 'TEXT']);
+
+  // DOT：持續傷害那一行在前。
+  b.stats.hp = 5;
+  b.addBuff({ id: 'poison', name: '毒', type: 'DOT', value: 50, duration: 2 });
+  engine.logger.logs.length = 0;
+  b.buffs.find(buff => buff.id === 'poison').onPreTurn(b, engine.logger, engine);
+  assert.deepEqual(types(), ['BUFF_EFFECT', 'SKILL_TEXT', 'TEXT']);
+
+  // 直接扣血、而且已經只剩 1 HP（壓成 0 傷害）：沒有傷害反應，台詞仍要印出來。
+  engine.logger.logs.length = 0;
+  b.stats.hp = 1;
+  b.takeDamage(50, engine.logger, { source: 'DIRECT', engine });
+  assert.deepEqual(types(), ['SKILL_TEXT']);
+});

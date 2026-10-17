@@ -49,6 +49,17 @@ are not. Several matching buffs multiply together. A multiplier below 1 is a
 plain damage reduction. Buffs without the field change nothing and consume no
 random numbers.
 
+## Heal taken multiplier (1.0.33)
+
+`healTaken: { multiplier }` on a Buff scales every heal its holder receives:
+HEAL actions, HOT ticks and game-layer calls to `entity.heal()`. Several
+matching buffs multiply together and the result is floored; a holder without
+such a buff gets the amount back untouched, not even rounded. HOT logs the
+scaled amount. `entity.scaleHealing(amount)` exposes the same math, and a
+caller that already scaled may pass `heal(amount, logger, { scaled: true })`.
+This is the heal-side twin of `damageTaken`, for anti-heal and aging effects
+that used to wrap `entity.heal` per encounter.
+
 ## Last stand (1.0.27)
 
 A passive with `trigger: 'LAST_STAND'` runs **after** every other damage step —
@@ -65,8 +76,47 @@ passives, so the amplifier re-multiplied the already-clamped damage and the
 added later in the array can undo it. Mitigation (blocks, reductions) still
 belongs in `BEFORE_DAMAGE`; only "this hit must not kill" belongs here.
 
+**Its log lines come after the hit (1.0.39).** The `logger` a `LAST_STAND`
+action receives is a holding buffer: whatever it logs is kept on
+`hit.pendingLogs` and written by `finishDamage`, after the hit's own line
+(DAMAGE/BLOCK, the DOT line, the luck event line), shield breaks and part
+breaks, and before `AFTER_DAMAGE_RECEIVED`. Before this the line was written
+inside `takeDamage`, so "survived at 1 HP" printed ahead of the damage that
+nearly killed. Anything the action triggers through that logger (a heal,
+sanity change) is held in the same order. A hit clamped to 0 damage with no
+deferred caller is settled in `takeDamage` so the held lines still print.
+Logging through `engine.logger` instead bypasses the buffer.
+`BEFORE_DAMAGE` keeps the real logger: its lines describe why the hit changes
+("the guard is pried open") and read correctly before it.
+
 Applies to attacks, DOT, luck events and direct `takeDamage` alike. Code that
 sets `hp = 0` directly bypasses it, as it bypasses every damage hook.
+
+## Shield (1.0.38)
+
+`shield: amount` on a Buff gives its holder a pool that absorbs damage before
+HP. It runs after `damageTaken`, every `BEFORE_DAMAGE` passive and
+invincibility, and before `LAST_STAND`, so it soaks up what would really be
+deducted. Several shields drain in the order they were added. The remaining
+pool lives in `buff.shield.value` (`buff.shield.max` keeps the original); a
+shield emptied by a hit is removed from the holder at once and its name goes
+into `hit.shieldsBroken`, which `finishDamage` logs as `SHIELD_BREAK`
+("X 的護盾碎掉了！") after the hit's own line.
+
+Absorbing counts as a block: the hit gets `blocked: true`, `blockMethod` is the
+first shield's name, and `hit.shieldAbsorbed` is the total soaked. The default
+text therefore reads "但是被 X 用護盾擋下了！" for a fully absorbed hit and
+"……用護盾抵擋，造成了 N 點傷害！" for a partial one; DAMAGE logs carry
+`shieldAbsorbed`. Shields absorb attacks, DOT, luck events and direct
+`takeDamage`; an action with `ignoreShield: true` passes through. An attack the
+shield soaked completely still counts as received: `AFTER_ATTACK_RECEIVED` and
+`AFTER_ATTACK_DEALT` run with `actualDamage: 0` and the aggregated
+`shieldAbsorbed` (per-hit `AFTER_DAMAGE_RECEIVED` still needs HP lost). The buff's
+`duration` still expires it like any other buff.
+
+Before 1.0.38 a shield had to be a `BEFORE_DAMAGE` passive per encounter, which
+runs in array order with the attacker's temporary amplifiers and cannot report
+the break after the hit line. Tests: `node --test tests/shieldAndInsertAction.test.js`.
 
 All fields are opt-in; pre-existing skills keep their RNG sequence and behavior.
 Tests: `node --test tests/protection.test.js`, and the full `npm test` suite.

@@ -87,17 +87,39 @@ class Entity {
       result.blockMethod = protection.name || '無敵';
     }
     result.damage = Math.max(0, Math.floor(result.damage));
+    // 護盾（1.0.38）：照掛上的順序吸收，扣完的盾碎掉並移除，碎掉的名字留在 shieldsBroken 給 finishDamage 印。
+    // 有吸收就算格擋：全吸收是「用護盾擋下了」，吸不完是「用護盾抵擋，造成了 N 點傷害」。
+    if (result.damage > 0 && !context.action?.ignoreShield) {
+      for (const buff of this.buffs) {
+        if (!buff.shield || buff.shield.value <= 0 || result.damage <= 0) continue;
+        const absorbed = Math.min(buff.shield.value, result.damage);
+        buff.shield.value -= absorbed;
+        result.damage -= absorbed;
+        result.shieldAbsorbed = (result.shieldAbsorbed || 0) + absorbed;
+        if (!result.blocked) { result.blocked = true; result.blockMethod = buff.name || '護盾'; }
+        if (buff.shield.value <= 0) (result.shieldsBroken ||= []).push(buff);
+      }
+      if (result.shieldsBroken) this.buffs = this.buffs.filter(buff => !result.shieldsBroken.includes(buff));
+    }
     // 保命（1.0.27）：所有倍率、BEFORE_DAMAGE 與無敵都算完，這一擊仍會致死時才執行。
     // 排在最後，攻擊方臨時插進來的增傷被動才蓋不掉「停在 1 HP」。見 PROTECTION.md。
+    // 保命的台詞延後（1.0.39）：LAST_STAND 拿到的是暫存用的 logger，寫進來的日誌先放在
+    // hit.pendingLogs，等傷害那一行印完、finishDamage 才補印。直接給真的 logger 會讓
+    // 「撐住了最後一口氣」排在「造成 N 點傷害」前面——還沒挨打就先講挨完的事。
     if (result.damage > 0 && result.damage >= this.stats.hp) {
+      const deferred = logger ? { addLog: entry => (result.pendingLogs ||= []).push(entry) } : logger;
       for (const passive of [...this.passives]) {
         if (passive.trigger !== 'LAST_STAND') continue;
         if (passive.enabled && !passive.enabled(this, result)) continue;
-        if (passive.action) passive.action(this, result, logger);
+        if (passive.action) passive.action(this, result, deferred);
       }
       result.damage = Math.max(0, Math.floor(result.damage));
     }
-    if (result.damage === 0) return result;
+    if (result.damage === 0) {
+      // 整擊被護盾吃掉要印碎盾、保命壓成 0 也有暫存的台詞；延後結算的呼叫端會自己呼叫 finishDamage。
+      if ((result.shieldsBroken || result.pendingLogs) && !context.deferReactions) this.finishDamage(result, logger, context.engine);
+      return result;
+    }
     result.actualDamage = Math.min(this.stats.hp, result.damage);
     this.stats.hp -= result.damage;
     this.checkDeath();
@@ -160,12 +182,18 @@ class Entity {
   finishDamage(hit, logger, engine) {
     if (this.settledDamage.has(hit)) return;
     this.settledDamage.add(hit);
+    for (const buff of hit.shieldsBroken || []) {
+      logger?.addLog({ type: 'SHIELD_BREAK', actorId: hit.caster?.id, targetId: this.id, buffId: buff.id,
+        skillId: hit.skill?.id, message: `${this.name} 的${buff.name || '護盾'}碎掉了！` });
+    }
     if (hit.brokePart) {
       logger?.addLog({ type: 'PART_BREAK', actorId: hit.caster?.id, targetId: this.id,
         skillId: hit.skill?.id, partId: hit.partId, partName: hit.partName,
         value: hit.partDamage, message: `${this.name} 的${hit.partName}被破壞了！` });
       this.runDamagePassives('ON_PART_BREAK', hit, logger, engine);
     }
+    // LAST_STAND 暫存的日誌：排在這一擊本身（傷害行、碎盾、部位破壞）之後、受傷反應之前。
+    for (const entry of hit.pendingLogs || []) logger?.addLog(entry);
     if (hit.actualDamage > 0) this.runDamagePassives('AFTER_DAMAGE_RECEIVED', hit, logger, engine);
     engine?.settleDeaths();
     if (hit.damage > 0 && this.isAlive) this.checkPassives('ON_HP_CHANGE', logger, engine);
@@ -192,8 +220,17 @@ class Entity {
     }
   }
 
-  heal(amount, logger, { engine, deferReactions = false } = {}) {
+  // 治療承受倍率（1.0.33）：身上所有 healTaken 相乘。沒有這種 buff 時原數奉還，連取整都不做。
+  scaleHealing(amount) {
+    const buffs = this.buffs.filter(buff => buff.healTaken);
+    if (!buffs.length || !(amount > 0)) return amount;
+    return Math.floor(buffs.reduce((value, buff) => value * buff.healTaken.multiplier, amount));
+  }
+
+  // scaled：呼叫端已經套過 scaleHealing（HOT 要先算出實際回復量才能印日誌）。
+  heal(amount, logger, { engine, deferReactions = false, scaled = false } = {}) {
     if (!this.isAlive) return 0;
+    if (!scaled) amount = this.scaleHealing(amount);
     const before = this.stats.hp;
     this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + amount);
     if (!deferReactions) this.checkPassives('ON_HP_CHANGE', logger, engine);
@@ -300,6 +337,12 @@ class Entity {
   rollStun() {
     if (!this.isAlive) return null;
     return this.buffs.find(b => b.type === 'STUN' && b.rollBlock()) || null;
+  }
+
+  // 這一招有沒有被沉默擋下。回傳擋下它的 Buff，沒有就是 null。見 SILENCE.md。
+  silencedBy(skill) {
+    if (!skill) return null;
+    return this.buffs.find(b => b.silence && b.silence.filter(skill, this)) || null;
   }
 
   // 取得加成後的能力值

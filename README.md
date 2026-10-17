@@ -19,10 +19,11 @@ npm test       # 執行測試
 | [COUNTERS.md](COUNTERS.md) | 一般反擊、技能反擊與傷害條件效果 |
 | [EVASION.md](EVASION.md) | 落空時由防守方描述自己怎麼躲的（`ON_EVADE` / `AFTER_EVADE`） |
 | [DAMAGE_REACTIONS.md](DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
-| [ACTIONS.md](ACTIONS.md) | 行動槽出手後通知全場（`AFTER_ACTION`）、回合開始的被動（`ROUND_START`） |
-| [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除、傷害縮放與保命（`LAST_STAND`） |
+| [ACTIONS.md](ACTIONS.md) | 戰鬥開場的被動（`BATTLE_START`）、行動槽出手後通知全場（`AFTER_ACTION`）、回合開始的被動（`ROUND_START`）、喘息之後（`AFTER_REST`）、出招之前（`BEFORE_SKILL_CAST`）、插隊行動（`insertAction`） |
+| [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除、傷害縮放、保命（`LAST_STAND`）與護盾（`shield`） |
 | [FATIGUE.md](FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
 | [SANITY.md](SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
+| [SILENCE.md](SILENCE.md) | 沉默：擋下指定招式，普攻被擋時改用替代攻擊 |
 | [TAGS.md](TAGS.md) | 技能／傷害段／Buff 的自由標籤，傷害結算時合併成 `hit.tags` |
 | [AGGRO.md](AGGRO.md) | 仇恨值如何加權目標抽選，以及用 Buff 做嘲諷與隱蔽 |
 | [SKILL_MODIFIERS.md](SKILL_MODIFIERS.md) | 技能施放率 `skillCastRate`、無視防禦與敵方光環 |
@@ -167,7 +168,7 @@ result.logs.forEach((log, index) => {
 | type | 用途 |
 | --- | --- |
 | `TEXT` | 只輸出一行戰報，不結算任何數值（用於起手台詞、演出） |
-| `DAMAGE` | 傷害，支援 `hits` 多段、`power` 倍率、`statKey`、`accuracy` |
+| `DAMAGE` | 傷害，支援 `hits` 多段、`power` 倍率、`statKey`、`accuracy`、`hitOrder`（見下方多段全體攻擊） |
 | `HEAL` | 治療，日誌使用實際恢復量；`stat` 預設 `atk`，可改單一能力值或 `{ atk: 1, int: 1 }` 權重表（回復量 = Σ 能力值 × 權重 × `power`） |
 | `BUFF` | 附加狀態效果（`HOT` / `DOT` / `STAT` / `STUN`，見下方 `Buff`） |
 | `RESTORE_SP` | 恢復 SP，輸出 `SP_RECOVER` 日誌 |
@@ -241,7 +242,8 @@ Skill 以最終 damage 產生 BLOCK 戰報（value 為減傷後傷害）。完�
 
 「這一擊不能致死、停在 1 HP」不要寫在 `BEFORE_DAMAGE`：那裡照陣列順序執行，攻擊方臨時插進來的
 增傷會排在後面把它蓋掉。改用 `trigger: 'LAST_STAND'`，它在所有倍率、`BEFORE_DAMAGE` 與無敵之後、
-而且只在這一擊仍會致死時執行，見 [PROTECTION.md](PROTECTION.md)。
+而且只在這一擊仍會致死時執行，見 [PROTECTION.md](PROTECTION.md)。它在 action 裡寫的日誌會延到
+傷害那一行之後才印（1.0.39），直接寫「撐住了」即可，不必自己延到 `AFTER_DAMAGE_RECEIVED`。
 `block` 可為字串或 context 回呼，預設依最終傷害顯示完全格擋或部分減傷。
 被動不組裝整句。多段技能的前綴由技能自行決定，並不強制使用「第 X 擊」。
 `action.message` 仍優先於所有片段，需自行根據 `ctx.blocked`、`ctx.blockMethod`
@@ -315,3 +317,22 @@ text: {
   block: ctx => `劍刃被 ${ctx.target.name} 的${ctx.blockMethod}擋住，造成 ${ctx.value} 點傷害！`
 }
 ```
+
+### 多段全體攻擊的順序（`hitOrder`，1.0.31）
+
+多段的 `ENEMY_ALL` 預設逐目標打完（A 第 1、2 擊 → B 第 1、2 擊）。
+`hitOrder: 'wave'` 改成逐波：第 1 擊掃過所有人，再第 2 擊掃過所有人。
+第 2 波起會先印 `text.wave`（`SKILL_TEXT`，ctx 有 `hitIndex`、`targets`），不設就不印。
+逐波時每個目標在每一波都是第一行，開頭一律用 `text.action`，不用 `combo`；反擊行沿用同一個開頭。
+
+```js
+{ type: 'DAMAGE', targetType: 'ENEMY_ALL', hits: 2, hitOrder: 'wave',
+  text: { action: '', wave: '風勢又折了回來——' } }
+// 但是遭桐人反擊，受到 490 點傷害！
+// 對 羅羅亞·索隆 造成了 120 點傷害！
+// 風勢又折了回來——
+// 對 桐人 造成了 273 點傷害！ …
+```
+
+只用在固定段數：普攻與速度連擊（`combo`）的段數依目標而不同，普攻照舊逐目標打完，`combo` 加 `wave` 直接拋錯。
+一次施放仍然是一次攻擊，`AFTER_ATTACK_RECEIVED` 對每個目標照樣只聚合一次。測試：`tests/hitOrder.test.js`。

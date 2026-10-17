@@ -247,6 +247,34 @@ test('the summary style stays the default so existing counter reports do not mov
   assert.equal(engine.logger.logs[0].message, 'a 攻擊，但是遭b以回擊反擊，受到 10 點傷害！');
 });
 
+test('the summary style drops only the replier own SKILL_TEXT, not lines other units log meanwhile', t => {
+  const plain = new Skill({ id: 'plain', name: '回擊', actions: [
+    { type: 'TEXT', targetType: 'SELF', text: { action: '回擊的開場白' } },
+    { type: 'DAMAGE' }
+  ] });
+  const { a, b, engine, run } = setup(t, strike([{ type: 'DAMAGE' }]));
+  b.counterSkill = plain;
+  // 原攻擊者被還擊打到時說的話，跟還擊招式無關，不能跟著開場白一起被丟掉。
+  a.passives.push({ id: 'ouch', trigger: 'AFTER_DAMAGE_RECEIVED',
+    action: (self, _hit, logger) => logger.addLog({ type: 'SKILL_TEXT', actorId: self.id, skillId: 'ouch', message: '撐住！' }) });
+  run();
+  assert.deepEqual(engine.logger.logs.map(log => log.message), ['a 攻擊，但是遭b以回擊反擊，受到 10 點傷害！', '撐住！']);
+});
+
+test('the replier own passive lines survive the summary; only lines under the reply skill ids are dropped', t => {
+  const plain = new Skill({ id: 'plain', name: '回擊', actions: [
+    { type: 'TEXT', targetType: 'SELF', text: { action: '回擊的開場白' } },
+    { type: 'DAMAGE' }
+  ] });
+  const { b, engine, run } = setup(t, strike([{ type: 'DAMAGE' }]));
+  b.counterSkill = plain;
+  // 還擊者打中人時觸發的被動，不屬於還擊招式的文案。
+  b.passives.push({ id: 'stance', trigger: 'AFTER_DAMAGE_DEALT',
+    action: (self, _hit, logger) => logger.addLog({ type: 'SKILL_TEXT', actorId: self.id, skillId: 'stance', message: '換了架勢！' }) });
+  run();
+  assert.deepEqual(engine.logger.logs.map(log => log.message), ['a 攻擊，但是遭b以回擊反擊，受到 10 點傷害！', '換了架勢！']);
+});
+
 test('an unknown counterStyle throws at construction instead of silently condensing', () => {
   assert.throws(() => new Skill({ id: 'oops', name: 'x', counterStyle: 'verbose' }),
     /unknown counterStyle "verbose"/);
