@@ -209,6 +209,12 @@ class BattleEngine {
   resolveHit(caster, target, skill, action, hitIndex) {
     const adjustment = this.hitResolver?.({ caster, target, skill, action, hitIndex,
       turn: this.currentTurn, engine: this }) || {};
+    // forceMiss（1.0.42）：這一擊必定落空，而且不擲命中骰。hitRateModifier 有 10% 的保底命中，
+    // 表達不了「這一下根本碰不到」；而 untouchable 是掛在防守方身上的狀態，要先知道
+    // 被打的是誰、打的是哪一招才能決定時（同一槽的第二段起才看穿），只有這裡拿得到。
+    if (adjustment.forceMiss === true) {
+      return { hit: false, forced: true, evadeMessage: adjustment.evadeMessage, hitMessage: adjustment.hitMessage };
+    }
     const hit = Formulas.isHit(caster, target, action.accuracy || 1,
       adjustment.hitRateModifier || 0);
     adjustment.afterRoll?.(hit);
@@ -318,11 +324,31 @@ class BattleEngine {
     const round = { round: this.currentTurn };
     for (const entity of [...this.teamA, ...this.teamB]) {
       if (this.result) break;
-      if (!entity.isAlive) continue;
-      entity.runDamagePassives('ROUND_START', round, this.logger, this);
+      if (entity.isAlive) {
+        entity.runDamagePassives('ROUND_START', round, this.logger, this);
+        continue;
+      }
+      // 倒下的單位只跑標了 whileDead 的（1.0.43）：等著重生、倒數計時這類「人不在場也要數」的被動。
+      for (const passive of [...entity.passives]) {
+        if (this.result || entity.isAlive) break;
+        if (passive.trigger !== 'ROUND_START' || !passive.whileDead) continue;
+        if (passive.enabled && !passive.enabled(entity, round)) continue;
+        passive.action?.(entity, round, this.logger, this);
+      }
     }
     this.settleDeaths();
     this.checkWinCondition();
+  }
+
+  // 讓倒下的單位站回來（1.0.43）：HP 照給的值（至少 1、不超過上限），清掉死亡紀錄，之後再倒下會照常印「倒下了」。
+  // 身上的東西不動：倒下時框架已經清掉觸發型 Buff，其他的留給呼叫端決定。站回來的單位這一回合還沒排進行動順序的話，
+  // 照常行動；在回合開始時呼叫最自然。回傳是否真的復活了。
+  revive(entity, hp) {
+    if (!entity || entity.isAlive) return false;
+    entity.stats.hp = Math.max(1, Math.min(entity.stats.maxHp ?? Infinity, Math.floor(hp)));
+    entity.isAlive = true;
+    this.deathLogged.delete(entity.id);
+    return true;
   }
 
   // 戰鬥開場（openingLogs 與開場台詞之後、第 1 回合之前）對每個存活單位執行

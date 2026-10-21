@@ -29,6 +29,17 @@ replies skip the check and hit normally; DOT and direct `takeDamage` are not
 attacks and are unaffected. Sure-hit effects built from hit bonuses do not pierce
 it, since the roll never happens.
 
+## Forced miss from the hit resolver (1.0.42)
+
+`hitResolver` may return `{ forceMiss: true }` (optionally with `evadeMessage`).
+That hit misses without calling `Formulas.isHit`, so no hit roll is drawn; the
+miss runs the normal evasion path and `evasion.forcedMiss` is true for
+`ON_EVADE`/`AFTER_EVADE`. Use it when "this hit cannot touch" depends on the
+caster, target and skill of the hit itself, which a buff on the defender cannot
+know in advance. `hitRateModifier` cannot express it: hit rate never drops below
+10%. Same exemptions as untouchable: counter replies and `ignoreInvincible`
+actions never ask the resolver.
+
 `damageMultiplier` on DAMAGE defaults to no change. A finite nonnegative value
 scales calculated damage after defense, combo decay and critical damage, before
 BEFORE_DAMAGE reactions, with floor rounding. This supports split hits without

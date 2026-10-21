@@ -166,3 +166,30 @@ test('a defender with only ON_EVADE is untouched, and logger stays optional', t 
   assert.equal(log.logs.length, 1);
   assert.equal(log.logs[0].message, 'a 攻擊，但是被 b 用翻滾躲開了！');
 });
+
+test('hitResolver forceMiss misses without drawing a hit roll and marks the evasion as forced', () => {
+  const { BattleEngine } = require('../src');
+  const base = { hp: 1000, maxHp: 1000, sp: 30, atk: 10, spd: 10 };
+  const seen = [];
+  const a = new Entity({ id: 'a', name: 'a', team: 'A', stats: base });
+  const b = new Entity({ id: 'b', name: 'b', team: 'B', stats: base, passives: [{
+    id: 'watch', trigger: 'ON_EVADE', action: (self, evasion) => seen.push(evasion.forcedMiss)
+  }] });
+  const engine = new BattleEngine([a], [b], {
+    luckEvents: { enabled: false },
+    hitResolver: ({ hitIndex }) => hitIndex === 2 ? { forceMiss: true, evadeMessage: '第二下穿了過去。' } : null
+  });
+  const original = Formulas.isHit;
+  let rolls = 0;
+  Formulas.isHit = (...args) => { rolls++; return true; };
+  try {
+    const skill = new Skill({ id: 'twice', name: '兩段', actions: [{ type: 'DAMAGE', hits: 3 }] });
+    skill.execute(a, [a], [b], engine.logger, engine);
+  } finally { Formulas.isHit = original; }
+  const misses = engine.logger.logs.filter(log => log.type === 'MISS');
+  assert.equal(misses.length, 1);
+  assert.equal(misses[0].message, '第二下穿了過去。');
+  assert.deepEqual(seen, [true]);
+  // 第二下沒有擲命中骰。
+  assert.equal(rolls, 2);
+});

@@ -411,7 +411,8 @@ class Skill {
         if (!hitRoll.hit) {
           // 落空先問防守方「你是怎麼躲的」，再組句；不答就維持原本的預設文案。
           const evasion = target.resolveEvasion(
-            { caster, skill: this, action, hitIndex, hits, isNormalAttack, tags, untouchable });
+            { caster, skill: this, action, hitIndex, hits, isNormalAttack, tags, untouchable,
+              forcedMiss: hitRoll.forced === true });
           logger.addLog({
             type: 'MISS',
             actorId: caster.id,
@@ -567,6 +568,12 @@ class Skill {
           // 讀的是原始 stats 而不是生效值，所以同一次施放中前面幾段的 buff
           // 放大不了這裡的回復量，兩段的先後順序沒有差別。
           const healAmount = target.heal(Math.floor(scale * (action.power || 1)), logger, { deferReactions: true });
+          // 群體治療（1.0.44）：滿血或回不到血的目標不印「恢復了 0」。二十人的隊伍一次全體治療，
+          // 光是滿血的人就能洗掉半面戰報。單體治療照印，否則看不出施放者這一動做了什麼。
+          if (healAmount === 0 && currentTargets.length > 1) {
+            target.checkPassives('ON_HP_CHANGE', logger, context);
+            return;
+          }
           logger.addLog({
             type: 'HEAL',
             actorId: caster.id,
