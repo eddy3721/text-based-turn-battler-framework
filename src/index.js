@@ -4,6 +4,7 @@ const Buff = require('./core/Buff');
 const BattleEngine = require('./core/BattleEngine');
 const Formulas = require('./utils/Formulas');
 const { Sanity, createSanityRules } = require('./core/Sanity');
+const { random, createSeededRandom } = require('./utils/Random');
 
 module.exports = {
   Entity,
@@ -12,5 +13,7 @@ module.exports = {
   BattleEngine,
   Formulas,
   createSanityRules,
-  Sanity
+  Sanity,
+  random,
+  createSeededRandom
 };

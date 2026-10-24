@@ -133,6 +133,26 @@ const result = engine.start();
 重用同一實體建立新戰鬥時，框架會從原名重新編號。呼叫端只需提供角色或怪物
 本名，不需附加玩家名稱或預先加上 A／B 後綴。
 
+#### 可重現的戰鬥（`rng`，1.0.45）
+
+框架裡所有擲骰（命中、爆擊、傷害浮動、反擊、目標抽選、幸運事件……）預設都用 `Math.random`。
+建立引擎時傳入 `rng`，就改用你給的亂數來源；同一個種子永遠跑出同一場戰鬥，可以拿來做重播、
+平衡模擬或回歸測試：
+
+```javascript
+const { BattleEngine, createSeededRandom, random } = require('text-based-turn-battler-framework');
+
+const seed = 20261025;
+const result = new BattleEngine([player], [boss], { rng: createSeededRandom(seed) }).start();
+// 把 seed 存下來，之後用同樣的隊伍與同一個 seed 再跑一次，就會得到一模一樣的 result.logs
+```
+
+- `rng` 是回傳 [0, 1) 數字的函式，只在 `start()` 執行期間生效，跑完（含拋錯）就換回原本的來源。
+- 沒有傳 `rng` 時行為和舊版完全相同，亂數序列不變。
+- 遊戲層的鉤子與被動若也要擲骰，請呼叫框架匯出的 `random()` 而不是 `Math.random()`，
+  才會跟著同一個種子走。
+- `createSeededRandom` 是 mulberry32，只用來重現戰鬥，不適合任何需要安全性的場合。
+
 ### 4. 處理戰鬥日誌 (UI 渲染)
 前端專案**最重要**的工作就是把 `result.logs` 漂漂亮亮地渲染出來。
 您可以寫一個計時器 (例如 `setTimeout`)，每隔 0.5 秒從 logs 陣列拿出一筆資料顯示在畫面上，營造出戰鬥的動態感：

@@ -2,6 +2,7 @@ const Formulas = require('../utils/Formulas');
 const assignBattleNames = require('../utils/BattleNames');
 const Skill = require('./Skill');
 const { randomLuckMessage } = require('../utils/LuckEvents');
+const { random, withRandom } = require('../utils/Random');
 const basicCounter = new Skill({ id: 'basic_counter', name: '反擊', actions: [{ type: 'DAMAGE', power: 1 }] });
 // 沉默擋到普攻、Buff 又沒給 fallback 時的替代攻擊。照普攻收費、吃速度連擊。
 const silencedStrike = new Skill({ id: 'silenced_strike', name: '攻擊', actions: [{ type: 'DAMAGE', power: 1 }] });
@@ -34,6 +35,9 @@ class BattleEngine {
     this.teamB = teamB;
     assignBattleNames([...teamA, ...teamB]);
     this.maxTurns = options.maxTurns || 100;
+    // 自訂亂數來源（1.0.45）：() => [0, 1) 的函式，只在 start() 期間生效。不給就用 Math.random。
+    if (options.rng != null && typeof options.rng !== 'function') throw new Error('rng must be a function');
+    this.rng = options.rng;
     this.logger = new Logger();
     this.currentTurn = 1;
     this.result = null;
@@ -169,7 +173,7 @@ class BattleEngine {
     const resolved = this.resolveActionTargetType(caster, targetType);
     const fixed = this.actionTargetOverride?.caster === caster && this.actionTargetOverride.targets;
     return [resolved === 'ENEMY_SINGLE' && !fixed ? Formulas.pickByAggro(pool)
-      : pool[Math.floor(Math.random() * pool.length)]];
+      : pool[Math.floor(random() * pool.length)]];
   }
 
   // 指定目標（options.targets）在敵我反轉下還算不算數：全都站在反轉後那一邊才算，
@@ -245,7 +249,7 @@ class BattleEngine {
     if (!this.luckEventsEnabled || this.result || !actor.canAct()) return false;
     const enemies = (actor.team === 'A' ? this.teamB : this.teamA).filter(e => e.isAlive);
     if (!enemies.length) return false;
-    const opponent = enemies.length === 1 ? enemies[0] : enemies[Math.floor(Math.random() * enemies.length)];
+    const opponent = enemies.length === 1 ? enemies[0] : enemies[Math.floor(random() * enemies.length)];
     const profile = Formulas.luckEventProfile(actor, opponent);
     if (profile.gap <= 0) return false;
     const tier = Formulas.rollLuckEvent(profile);
@@ -461,7 +465,7 @@ class BattleEngine {
     if (!caster.isAlive || caster.isPanicked?.() || this.result) return;
     const pool = this.getCastableSkills(caster, skillIds);
     if (!pool.length) return;
-    const skill = pool[Math.floor(Math.random() * pool.length)];
+    const skill = pool[Math.floor(random() * pool.length)];
     const allies = caster.team === 'A' ? this.teamA : this.teamB;
     const enemies = caster.team === 'A' ? this.teamB : this.teamA;
     skill.execute(caster, allies, enemies, this.logger, this, { ...options, ignoreSp: true });
@@ -518,7 +522,7 @@ class BattleEngine {
     do { id = `summon_${this.nextSummonId++}`; }
     while ([...this.teamA, ...this.teamB].some(e => e.id === id));
     const pool = action.monsterIds;
-    const monsterId = pool?.length ? pool[Math.floor(Math.random() * pool.length)] : action.monsterId;
+    const monsterId = pool?.length ? pool[Math.floor(random() * pool.length)] : action.monsterId;
     const entity = this.summonFactory(monsterId, { entityId: id });
     // 計數的是「嘗試」而不是「成功」：招不到人也用掉了這次機會。
     // 只算成功的話，maxTotal 就從「一場只能召喚一次」變成「一場只能成功一次」，
@@ -549,6 +553,10 @@ class BattleEngine {
 
   // 一次性跑完戰鬥
   start() {
+    return withRandom(this.rng, () => this.runToEnd());
+  }
+
+  runToEnd() {
     this.logger.addLog({ type: 'BATTLE_START', message: '戰鬥開始！' });
     this.openingLogs.forEach(log => this.logger.addLog(log));
     [...this.teamA, ...this.teamB].filter(e => e.isAlive).forEach(e => this.dialogue(e, 'opening'));
@@ -629,7 +637,7 @@ class BattleEngine {
         this.logger.addLog({
           type: 'TEXT', actorId: entity.id, buffId: stun.id, message: stun.blockMessage(entity)
         });
-      } else if (!entity.actionDisabled && entity.getFatigueStage() === 'EXHAUSTED' && Math.random() < 0.2) {
+      } else if (!entity.actionDisabled && entity.getFatigueStage() === 'EXHAUSTED' && random() < 0.2) {
         this.logger.addLog({ type: 'FATIGUE_SKIP', actorId: entity.id, message: `${entity.name} 累得無法動彈` });
       } else {
         this.triggerBuffs(entity, 'BEFORE_ACTION');
@@ -667,11 +675,11 @@ class BattleEngine {
         entity.hasActed = true;
         const skillCastChance = this.getSkillCastChance(entity);
 
-        if (!selectedSkill && entity.skills && entity.skills.length > 0 && Math.random() < skillCastChance) {
+        if (!selectedSkill && entity.skills && entity.skills.length > 0 && random() < skillCastChance) {
           // 若決定使用技能，從擁有的技能中隨機抽取一個「可施放」的技能
           const castableSkills = entity.skills.filter(s => s.canCast(entity, this));
           if (castableSkills.length > 0) {
-            const randomIndex = Math.floor(Math.random() * castableSkills.length);
+            const randomIndex = Math.floor(random() * castableSkills.length);
             selectedSkill = castableSkills[randomIndex];
             // 抽選照舊從可施放的技能裡抽，抽到被沉默的招才退回普攻。
             // 先過濾再抽會改變沒被沉默的招的機率，也會多吃或少吃亂數。

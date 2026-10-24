@@ -1,4 +1,5 @@
 const { normalizeTags } = require('../utils/Tags');
+const { random } = require('../utils/Random');
 
 class Buff {
   constructor({ id, name, type, duration, value, effect, trigger, remainingTriggers, skillIds, chance, message, polarity = 'neutral', dispellable = false, invincible = false, untouchable = false, tags, damageTaken, healTaken, silence, shield }) {
@@ -100,7 +101,7 @@ class Buff {
 
   // 擲一次「這個行動槽會不會被擋下」。chance 為 1 時不擲骰，維持既有的必定暈眩。
   rollBlock() {
-    return this.chance >= 1 || Math.random() < this.chance;
+    return this.chance >= 1 || random() < this.chance;
   }
 
   // 被擋下時的戰報句子；回呼簽章與技能文案一致，都只收一個 context 物件。

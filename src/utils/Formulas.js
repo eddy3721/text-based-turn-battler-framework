@@ -1,3 +1,4 @@
+const { random } = require('./Random');
 /**
  * 取得「加成後」的能力值。
  *
@@ -74,7 +75,7 @@ class Formulas {
 
   // Shared by normal and luck damage: vary before rounding, minimum 1.
   static applyDamageVariance(baseDamage) {
-    return Math.max(1, Math.floor(baseDamage * (0.9 + Math.random() * 0.2)));
+    return Math.max(1, Math.floor(baseDamage * (0.9 + random() * 0.2)));
   }
 
   // All luck events, regardless of team, character, monster or game mode.
@@ -87,7 +88,7 @@ class Formulas {
     return Math.floor(multiplier * (knee + knee * Math.log1p((gap - knee) / knee)));
   }
 
-  static rollLuckEvent(profile, roll = Math.random()) {
+  static rollLuckEvent(profile, roll = random()) {
     if (roll < profile.redChance) return 'RED';
     if (roll < profile.redChance + profile.purpleChance) return 'PURPLE';
     return null;
@@ -102,7 +103,7 @@ class Formulas {
     return COUNTER_CEILING / (1 + Math.exp(-gap / COUNTER_GAP_SCALE));
   }
 
-  static isCounter(attacker, defender, chanceMultiplier = 1, roll = Math.random()) {
+  static isCounter(attacker, defender, chanceMultiplier = 1, roll = random()) {
     const chance = Formulas.counterChance(attacker, defender) * chanceMultiplier;
     return chance > 0 && roll < chance;
   }
@@ -116,7 +117,7 @@ class Formulas {
     // 每個回合有 [參戰人數 × ACTION_SLOTS_PER_ENTITY] 個行動槽
     const slots = aliveEntities.length * ACTION_SLOTS_PER_ENTITY;
     for (let i = 0; i < slots; i++) {
-      let roll = Math.floor(Math.random() * sum);
+      let roll = Math.floor(random() * sum);
       for (let j = 0; j < spds.length; j++) {
         if (roll < spds[j]) {
           order.push(aliveEntities[j]);
@@ -148,12 +149,12 @@ class Formulas {
    *   否則單體技能會找不到目標，雙方互相打不到，戰鬥只能卡到 maxTurns。
    */
   static pickByAggro(candidates) {
-    // 只剩一個候選人時也要照常擲骰。舊的均勻抽在這裡一樣會呼叫 Math.random()，
+    // 只剩一個候選人時也要照常擲骰。舊的均勻抽在這裡一樣會擲一次骰，
     // 省掉它會讓 1v1 整場的亂數序列位移——所有固定亂數的戰鬥都會變成另一場。
     const weights = candidates.map(entity => Math.max(0, statsOf(entity).aggro ?? 1));
     const sum = weights.reduce((a, b) => a + b, 0);
-    if (sum <= 0) return candidates[Math.floor(Math.random() * candidates.length)];
-    let roll = Math.random() * sum;
+    if (sum <= 0) return candidates[Math.floor(random() * candidates.length)];
+    let roll = random() * sum;
     for (let i = 0; i < candidates.length; i++) {
       if (roll < weights[i]) return candidates[i];
       roll -= weights[i];
@@ -189,12 +190,12 @@ class Formulas {
     const gap = Math.max(0, statsOf(attacker).spd - statsOf(defender).spd);
     const minC = Math.max(1, Math.ceil(gap / COMBO_GAP_PER_MIN_HIT));
     const maxC = Math.max(1, Math.ceil(gap / COMBO_GAP_PER_MAX_HIT));
-    return Math.floor(Math.random() * (maxC - minC + 1)) + minC;
+    return Math.floor(random() * (maxC - minC + 1)) + minC;
   }
 
   // 爆擊判定
   static isCritical(attacker) {
-    return Math.random() < (statsOf(attacker).cri || 0);
+    return random() < (statsOf(attacker).cri || 0);
   }
 
   // 爆擊傷害倍率 (預設 1.5 倍)
@@ -222,7 +223,7 @@ class Formulas {
     // 最高命中率 100% (1.0)
     finalHitRate = Math.min(1.0, finalHitRate);
 
-    return Math.random() < finalHitRate;
+    return random() < finalHitRate;
   }
 }
 

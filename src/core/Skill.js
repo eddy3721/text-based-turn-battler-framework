@@ -1,5 +1,6 @@
 const Formulas = require('../utils/Formulas');
 const { normalizeTags, mergeTags } = require('../utils/Tags');
+const { random } = require('../utils/Random');
 
 /**
  * 戰報文字。
@@ -261,7 +262,7 @@ class Skill {
         return aliveEnemies;
       case 'ALLY_SINGLE':
         if (aliveAllies.length === 0) return [];
-        return [aliveAllies[Math.floor(Math.random() * aliveAllies.length)]];
+        return [aliveAllies[Math.floor(random() * aliveAllies.length)]];
       case 'ALLY_ALL':
         return aliveAllies;
       case 'SELF':

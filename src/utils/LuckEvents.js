@@ -1,3 +1,4 @@
+const { random } = require('./Random');
 const templates = {
   PURPLE: [
     '{name} 往後退後腦撞到樹受到 {damage} 點傷害。',
@@ -18,7 +19,7 @@ const templates = {
 };
 
 function randomLuckMessage(tier, name, damage) {
-  const index = Math.floor(Math.random() * templates[tier].length);
+  const index = Math.floor(random() * templates[tier].length);
   return { eventId: `${tier.toLowerCase()}_${index + 1}`,
     message: templates[tier][index].replace(/\{name\}|\{damage\}/g,
       token => token === '{name}' ? name : String(damage)) };

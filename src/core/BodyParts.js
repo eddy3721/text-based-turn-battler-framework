@@ -1,3 +1,4 @@
+const { random } = require('../utils/Random');
 function createBodyParts(configs) {
   if (!Array.isArray(configs)) throw new Error('parts must be an array');
   const ids = new Set();
@@ -13,7 +14,7 @@ function createBodyParts(configs) {
 
 // Broken parts remain hittable. No parts means no extra random draw.
 function selectBodyPart(parts) {
-  return parts.length ? parts[Math.floor(Math.random() * parts.length)] : null;
+  return parts.length ? parts[Math.floor(random() * parts.length)] : null;
 }
 
 function damageBodyPart(part, actualDamage, multiplier) {
