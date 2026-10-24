@@ -10,7 +10,7 @@
  *   CAST_SKILL     → 需要注入 skillResolver，等機率抽一招真正施放
  *
  * 再加上一個 condition: 'HP_BELOW' 的階段轉換被動（半血換武器）。
- * 各機制的完整規則寫在 README.md 與同層的主題文件（EVASION.md、COUNTERS.md …）。
+ * 各機制的完整規則寫在 README.md 與 docs/ 下的主題文件（docs/EVASION.md、docs/COUNTERS.md …）。
  */
 
 const { Entity, Skill, BattleEngine } = require('../src/index');

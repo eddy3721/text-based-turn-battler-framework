@@ -46,7 +46,7 @@
 
 原本只有 Buff 能掛在回合開始（`trigger: 'ROUND_START'` 加 `skillIds`），而且必須透過一個技能執行、
 有觸發次數上限；想「每回合記下自己的狀態」這種不出手、不留日誌的常駐被動無處可掛。
-二階堂希羅的死に戻り用它記下每回合開始時的 HP／SP。
+例如「回溯到回合開始」的技能，就用它記下每回合開始時的 HP／SP。
 
 ### 倒下時也跑（`whileDead`，1.0.43）與 `engine.revive`
 
@@ -55,7 +55,7 @@
 回傳是否真的復活。回合開始時復活，那一回合照常排進行動順序。
 
 全隊都倒下時勝負已經判定，`whileDead` 被動沒有機會執行：這是「等隊友撐住，自己再回來」，不是保命。
-第一個使用者是 mydoujin 的泰拉人（陣亡後幾回合在出生點重生）。測試：`tests/battleStart.test.js`。
+典型用途是陣亡後隔幾回合重生的單位。測試：`tests/battleStart.test.js`。
 
 ## 戰鬥開場（`BATTLE_START` 被動，1.0.40）
 
@@ -77,7 +77,7 @@
 ```
 
 原本開場只有 `openingSkill`，要等持有者第一次行動才放，那時已經印出第 1 回合、別人也可能先出手；
-`ROUND_START` 也一樣晚了一步。第一個使用者是 mydoujin 的 GM 角色底線啵。測試：`tests/battleStart.test.js`。
+`ROUND_START` 也一樣晚了一步。典型用途是開場就上好狀態、或先講一句開場白的角色。測試：`tests/battleStart.test.js`。
 
 ## 喘息之後（`AFTER_REST` 被動，1.0.34）
 
@@ -100,7 +100,7 @@ SP 付不起普攻、停下來喘息的那一槽，引擎在 `REST` 日誌**之�
 ```
 
 喘息仍不算出手：不通知 `AFTER_ACTION`、不進 `actionSlots`。原本喘息完全沒有掛勾，
-「喘息時改擺架勢」只能事後改寫日誌。第一個使用者是 mydoujin 艾莉絲的仁王立ち。
+「喘息時改擺架勢」只能事後改寫日誌。
 
 ## 出招之前（`BEFORE_SKILL_CAST` 被動，1.0.35）
 
@@ -132,7 +132,7 @@ SP 付不起普攻、停下來喘息的那一槽，引擎在 `REST` 日誌**之�
 - 沒有被動使用時不擲骰、不改任何數值，戰鬥亂數序列與 1.0.34 相同。
 
 原本「替隊友擋下對手的招式」只能寫在防守方自己的 `BEFORE_DAMAGE`，旁邊的隊友插不上手。
-希露菲葉特的亂魔是第一個使用者。測試：`tests/beforeSkillCast.test.js`。
+測試：`tests/beforeSkillCast.test.js`。
 
 ## 行動槽紀錄與戰鬥結尾（`actionSlots`／`battleEnd`，1.0.28）
 
@@ -151,7 +151,6 @@ SP 付不起普攻、停下來喘息的那一槽，引擎在 `REST` 日誌**之�
 
 原本戰鬥結束時沒有任何掛勾：`openingLogs` 只有開頭，想在結尾補東西只能在呼叫端
 事後改寫 `result.logs`，而那時已經看不到每一段日誌是誰、在哪一槽打出來的。
-第一個使用者是 mydoujin 第 41 層小美的精彩重播。
 
 ## 行動目標改向（`actionTargetResolver`，1.0.17；`excludeSelf`，1.0.32）
 
@@ -215,4 +214,4 @@ SP 付不起普攻、停下來喘息的那一槽，引擎在 `REST` 日誌**之�
 
 在這之前，遊戲層只能在 `AFTER_ACTION` 被動裡直接呼叫 `skill.execute`：那一下不算行動槽，
 別人的 `AFTER_ACTION` 看不到它、`actionSlots` 也不記，戰報重播會把它併進前一個人的槽。
-第一個使用者是 mydoujin 第 63 層開拓者的終結技。
+典型用途是條件達成後立刻追加的終結技。

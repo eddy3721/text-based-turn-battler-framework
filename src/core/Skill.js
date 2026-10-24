@@ -43,7 +43,7 @@ const { normalizeTags, mergeTags } = require('../utils/Tags');
  *   blockMethod   BEFORE_DAMAGE 被動填，預設 block 片段拼成「用某某擋下了！」
  *   evadeMethod   ON_EVADE 被動填，預設 miss 片段拼成「用某某躲開了！」
  * 落空還可以用 evadeMessage 整句覆寫，且優先於攻擊方的 action.message——
- * 「對手是怎麼躲掉的」只有防守方知道。詳見 EVASION.md。
+ * 「對手是怎麼躲掉的」只有防守方知道。詳見 docs/EVASION.md。
  */
 const DefaultText = {
   DAMAGE: {
@@ -188,13 +188,13 @@ class Skill {
     this.id = id;
     this.name = name;
     this.tier = tier; // standard / ultimate，提供戰報呈現使用
-    // 這招被當成 counterSkill 時的戰報呈現方式，見 COUNTERS.md。
+    // 這招被當成 counterSkill 時的戰報呈現方式，見 docs/COUNTERS.md。
     this.counterStyle = counterStyle;
-    // 整招不進入反擊判定（例如延遲引爆的陷阱），見 COUNTERS.md。
+    // 整招不進入反擊判定（例如延遲引爆的陷阱），見 docs/COUNTERS.md。
     this.uncounterable = uncounterable;
     // 每一擊的被反擊機率倍率；1 維持原率，0 仍保留判定語意但不會成功。
     this.counterChanceMultiplier = counterChanceMultiplier;
-    // 自由標籤，框架不解讀，見 TAGS.md。
+    // 自由標籤，框架不解讀，見 docs/TAGS.md。
     this.tags = normalizeTags(tags, `Skill "${id}"`);
     this.actions = actions; // 多段動作陣列
   }
@@ -327,7 +327,7 @@ class Skill {
       if (action.type === 'CAST_SKILL') {
         if (!context) throw new Error(`CAST_SKILL in "${this.id}" requires a BattleEngine context.`);
         // 子技能是獨立的一招，不繼承普攻的逐擊費用——這跟 AFTER_ATTACK_RECEIVED
-        // 把 CAST_SKILL 分開計算是同一條界線（見 INANIMATE.md）。
+        // 把 CAST_SKILL 分開計算是同一條界線（見 docs/INANIMATE.md）。
         // 派發型普攻是直接呼叫子技能的 execute，不走這裡，所以仍然收得到。
         const slot = caster.inBasicAttackSlot;
         caster.inBasicAttackSlot = false;

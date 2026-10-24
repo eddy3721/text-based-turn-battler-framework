@@ -7,16 +7,16 @@ class Buff {
       throw new Error('Invalid buff polarity, dispellable, invincible or untouchable');
     }
     this.polarity = polarity;
-    // 自由標籤，DOT 扣血時放進 hit.tags，見 TAGS.md。
+    // 自由標籤，DOT 扣血時放進 hit.tags，見 docs/TAGS.md。
     this.tags = normalizeTags(tags, `Buff "${id}"`);
     this.dispellable = dispellable;
     this.invincible = invincible;
-    // 打不到：DAMAGE 的每一擊不擲命中骰，直接落空（見 PROTECTION.md）。
+    // 打不到：DAMAGE 的每一擊不擲命中骰，直接落空（見 docs/PROTECTION.md）。
     // 跟 invincible 的差別是「沒碰到」而不是「碰到了但沒受傷」，所以走閃避那條路。
     this.untouchable = untouchable;
     // 承傷倍率（1.0.26）：持有者受到的傷害先乘上 multiplier，再跑 BEFORE_DAMAGE。
     // filter(hit) 決定哪些傷害算數（例如只放大法術）；省略時只作用在 DAMAGE 攻擊，
-    // DOT 與環境／直接扣血不受影響。見 PROTECTION.md。
+    // DOT 與環境／直接扣血不受影響。見 docs/PROTECTION.md。
     if (damageTaken !== undefined) {
       const { multiplier, filter } = damageTaken || {};
       if (!Number.isFinite(multiplier) || multiplier < 0 ||
@@ -26,7 +26,7 @@ class Buff {
       this.damageTaken = { multiplier, filter: filter || (hit => hit.source === 'ATTACK') };
     }
     // 治療承受倍率（1.0.33）：持有者受到的所有治療（HEAL 招式、HOT、遊戲層呼叫 heal）乘上 multiplier。
-    // damageTaken 的對稱版本，給減療、老化這類「補了也只回一部分」的效果用。見 PROTECTION.md。
+    // damageTaken 的對稱版本，給減療、老化這類「補了也只回一部分」的效果用。見 docs/PROTECTION.md。
     if (healTaken !== undefined) {
       const { multiplier } = healTaken || {};
       if (!Number.isFinite(multiplier) || multiplier < 0) {
@@ -36,12 +36,12 @@ class Buff {
     }
     // 護盾（1.0.38）：吸收持有者受到的傷害，吸收量在 value 裡逐擊扣掉，扣完就碎掉、從身上移除。
     // 排在承傷倍率、BEFORE_DAMAGE 與無敵之後、LAST_STAND 之前，所以吸收的是最後真正要扣的血。
-    // 持續傷害也吸收；招式帶 ignoreShield 才會穿過去。見 PROTECTION.md。
+    // 持續傷害也吸收；招式帶 ignoreShield 才會穿過去。見 docs/PROTECTION.md。
     if (shield !== undefined) {
       if (!Number.isFinite(shield) || shield <= 0) throw new Error(`Buff "${id}" shield needs a positive finite amount.`);
       this.shield = { value: Math.floor(shield), max: Math.floor(shield) };
     }
-    // 沉默（1.0.30）：擋下持有者的技能，見 SILENCE.md。
+    // 沉默（1.0.30）：擋下持有者的技能，見 docs/SILENCE.md。
     // true 是傳統的「不能用技能、普攻照常」；物件可以給 filter(skill, entity) 決定擋哪些招，
     // 擋到普攻時改用 fallback（省略時是框架的 ×1 ATK 攻擊）。
     if (silence !== undefined && silence !== false) {

@@ -102,7 +102,7 @@ class Entity {
       if (result.shieldsBroken) this.buffs = this.buffs.filter(buff => !result.shieldsBroken.includes(buff));
     }
     // 保命（1.0.27）：所有倍率、BEFORE_DAMAGE 與無敵都算完，這一擊仍會致死時才執行。
-    // 排在最後，攻擊方臨時插進來的增傷被動才蓋不掉「停在 1 HP」。見 PROTECTION.md。
+    // 排在最後，攻擊方臨時插進來的增傷被動才蓋不掉「停在 1 HP」。見 docs/PROTECTION.md。
     // 保命的台詞延後（1.0.39）：LAST_STAND 拿到的是暫存用的 logger，寫進來的日誌先放在
     // hit.pendingLogs，等傷害那一行印完、finishDamage 才補印。直接給真的 logger 會讓
     // 「撐住了最後一口氣」排在「造成 N 點傷害」前面——還沒挨打就先講挨完的事。
@@ -339,7 +339,7 @@ class Entity {
     return this.buffs.find(b => b.type === 'STUN' && b.rollBlock()) || null;
   }
 
-  // 這一招有沒有被沉默擋下。回傳擋下它的 Buff，沒有就是 null。見 SILENCE.md。
+  // 這一招有沒有被沉默擋下。回傳擋下它的 Buff，沒有就是 null。見 docs/SILENCE.md。
   silencedBy(skill) {
     if (!skill) return null;
     return this.buffs.find(b => b.silence && b.silence.filter(skill, this)) || null;

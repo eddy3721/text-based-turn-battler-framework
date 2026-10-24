@@ -9,6 +9,17 @@
     "demo:sanity": "node examples/sanity.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "author": "eddy3721",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eddy3721/text-based-turn-battler-framework.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eddy3721/text-based-turn-battler-framework/issues"
+  },
+  "homepage": "https://github.com/eddy3721/text-based-turn-battler-framework#readme",
+  "engines": {
+    "node": ">=20"
+  }
 }

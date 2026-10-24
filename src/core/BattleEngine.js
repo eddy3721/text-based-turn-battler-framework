@@ -50,20 +50,20 @@ class BattleEngine {
     this.hitResolver = options.hitResolver;
     this.roundStart = options.roundStart;
     this.actionTargetResolver = options.actionTargetResolver;
-    // 延後的目標判定（1.0.41）：同一個行動槽第一次挑「不是自己」的目標時才問，見 ACTIONS.md。
+    // 延後的目標判定（1.0.41）：同一個行動槽第一次挑「不是自己」的目標時才問，見 docs/ACTIONS.md。
     this.targetSelectionResolver = options.targetSelectionResolver;
     this.skillSelectionResolver = options.skillSelectionResolver;
     this.battleEnd = options.battleEnd;
     this.actionTargetOverride = null;
     // 每個真的出手的行動槽一筆：{ actor, skill, turn, start, end }，start／end 是 logger.logs 的索引
-    // （含 start、不含 end）。反擊、觸發技能與 AFTER_ACTION 的後果都算在該槽裡。見 ACTIONS.md。
+    // （含 start、不含 end）。反擊、觸發技能與 AFTER_ACTION 的後果都算在該槽裡。見 docs/ACTIONS.md。
     this.actionSlots = [];
     // 插隊行動（1.0.38）：insertAction 排進來的 { entity, skill, onSkip }，在目前這個行動槽結束後依序執行。
     this.insertedActions = [];
   }
 
   // 插隊（1.0.38）：讓 entity 在目前這個行動槽結束、下一個行動槽開始之前，額外執行一次 skill。
-  // 給「能量滿了隨時可以放」的終結技、追加攻擊這類不照速度排隊的行動用。見 ACTIONS.md。
+  // 給「能量滿了隨時可以放」的終結技、追加攻擊這類不照速度排隊的行動用。見 docs/ACTIONS.md。
   //
   // 插隊的那一槽是完整的行動槽：通知 AFTER_ACTION、記進 actionSlots（帶 inserted: true）。
   // 但它不是速度排出來的那一槽，所以不擲麻痺、不跑幸運事件與疲勞、不扣 Buff 的持續時間。
@@ -146,7 +146,7 @@ class BattleEngine {
   // 施放者這次挑 targetType 時實際可選的人（還活著）。會先觸發延後的目標判定，
   // 敵我反轉時 ENEMY_* 給的是我方、ALLY_* 給的是敵方。固定改向（{ targets }）只改 ENEMY_*。
   // 自己挑目標的招式（挑血最少的、挑層數最多的……）一律從這裡拿候選，不要直接讀 enemies：
-  // 直接讀的話混亂、附身這類效果就碰不到那一招。見 ACTIONS.md。
+  // 直接讀的話混亂、附身這類效果就碰不到那一招。見 docs/ACTIONS.md。
   targetPool(caster, targetType) {
     if (targetType === 'SELF') return caster.isAlive ? [caster] : [];
     const side = sideOf(targetType);
@@ -304,7 +304,7 @@ class BattleEngine {
 
   // 一個行動槽真的出手之後（普攻或技能，死亡已結算），通知場上所有存活單位，
   // 包含出手者自己與隊友。暈眩、喘息、恐慌、略過都不算出手；反擊與
-  // CAST_SKILL 觸發的技能屬於同一個行動槽，不另外通知。見 ACTIONS.md。
+  // CAST_SKILL 觸發的技能屬於同一個行動槽，不另外通知。見 docs/ACTIONS.md。
   notifyAction(actor, skill) {
     if (this.result) return;
     const action = { actor, skill };
@@ -318,7 +318,7 @@ class BattleEngine {
   }
 
   // 回合開始時（遭遇戰的 roundStart 之後、疲勞與 ROUND_START Buff 之前）
-  // 對每個存活單位執行 trigger: 'ROUND_START' 的被動。見 ACTIONS.md。
+  // 對每個存活單位執行 trigger: 'ROUND_START' 的被動。見 docs/ACTIONS.md。
   notifyRoundStart() {
     if (this.result) return;
     const round = { round: this.currentTurn };
@@ -352,7 +352,7 @@ class BattleEngine {
   }
 
   // 戰鬥開場（openingLogs 與開場台詞之後、第 1 回合之前）對每個存活單位執行
-  // trigger: 'BATTLE_START' 的被動，各一次。被動可以直接分出勝負：有結果就不進回合迴圈。見 ACTIONS.md。
+  // trigger: 'BATTLE_START' 的被動，各一次。被動可以直接分出勝負：有結果就不進回合迴圈。見 docs/ACTIONS.md。
   notifyBattleStart() {
     if (this.result) return;
     const battle = { maxTurns: this.maxTurns };
@@ -401,7 +401,7 @@ class BattleEngine {
     const counterBy = `${target.name}${reply === basicCounter ? '' : `以${reply.name}`}`;
     // 開頭沿用被反制那一擊自己的文案，單段是「A 使出了 X，」、多段是「第 N 擊，」。
     const incoming = Skill.composeLead(skill, action, caster, target, { hitIndex, isComboHit });
-    // 反擊技能可以宣告 counterStyle: 'detailed' 換掉呈現方式（見 COUNTERS.md）：
+    // 反擊技能可以宣告 counterStyle: 'detailed' 換掉呈現方式（見 docs/COUNTERS.md）：
     // 濃縮版把結果塞進 COUNTER 那一句，還擊自己的傷害行會被丟掉；詳細版只讓
     // COUNTER 宣告「被反擊了」，接著原封不動放行還擊自己的文案。
     // 預設仍是濃縮：一般還擊沒有自訂文案，放行只會得到「X 攻擊，造成 N 點傷害！」
@@ -685,7 +685,7 @@ class BattleEngine {
           if ((needsHitCost && entity.stats.sp < entity.getBasicAttackCost()) || entity.normalAttack.canCast?.(entity, this) === false) {
             const value = entity.restoreSp(Math.max(1, Math.ceil(entity.stats.maxSp * REST_SP_RATIO)));
             // 喘息的文案與後果交給 AFTER_REST 被動（1.0.34）：第一個提供 restMessage 的啟用中被動換掉預設句，
-            // 全部啟用中的被動在喘息日誌之後執行。見 ACTIONS.md。
+            // 全部啟用中的被動在喘息日誌之後執行。見 docs/ACTIONS.md。
             const rest = { value };
             const restPassives = entity.passives.filter(passive => passive.trigger === 'AFTER_REST' &&
               (!passive.enabled || passive.enabled(entity, rest)));

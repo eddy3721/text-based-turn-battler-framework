@@ -16,19 +16,27 @@ npm test       # 執行測試
 
 | 文件 | 內容 |
 | --- | --- |
-| [COUNTERS.md](COUNTERS.md) | 一般反擊、技能反擊與傷害條件效果 |
-| [EVASION.md](EVASION.md) | 落空時由防守方描述自己怎麼躲的（`ON_EVADE` / `AFTER_EVADE`） |
-| [DAMAGE_REACTIONS.md](DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
-| [ACTIONS.md](ACTIONS.md) | 戰鬥開場的被動（`BATTLE_START`）、行動槽出手後通知全場（`AFTER_ACTION`）、回合開始的被動（`ROUND_START`）、喘息之後（`AFTER_REST`）、出招之前（`BEFORE_SKILL_CAST`）、插隊行動（`insertAction`） |
-| [PROTECTION.md](PROTECTION.md) | 可選用的無敵、貫通、狀態解除、傷害縮放、保命（`LAST_STAND`）與護盾（`shield`） |
-| [FATIGUE.md](FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
-| [SANITY.md](SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
-| [SILENCE.md](SILENCE.md) | 沉默：擋下指定招式，普攻被擋時改用替代攻擊 |
-| [TAGS.md](TAGS.md) | 技能／傷害段／Buff 的自由標籤，傷害結算時合併成 `hit.tags` |
-| [AGGRO.md](AGGRO.md) | 仇恨值如何加權目標抽選，以及用 Buff 做嘲諷與隱蔽 |
-| [SKILL_MODIFIERS.md](SKILL_MODIFIERS.md) | 技能施放率 `skillCastRate`、無視防禦與敵方光環 |
-| [LUCK_EVENTS.md](LUCK_EVENTS.md) | 幸運事件（紫／紅）與遞減曲線 |
-| [INANIMATE.md](INANIMATE.md) | 不能行動的目標（`actionDisabled`／`lockedStats`）與整次攻擊結束後的反應 |
+| [COUNTERS.md](docs/COUNTERS.md) | 一般反擊、技能反擊與傷害條件效果 |
+| [EVASION.md](docs/EVASION.md) | 落空時由防守方描述自己怎麼躲的（`ON_EVADE` / `AFTER_EVADE`） |
+| [DAMAGE_REACTIONS.md](docs/DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
+| [ACTIONS.md](docs/ACTIONS.md) | 戰鬥開場的被動（`BATTLE_START`）、行動槽出手後通知全場（`AFTER_ACTION`）、回合開始的被動（`ROUND_START`）、喘息之後（`AFTER_REST`）、出招之前（`BEFORE_SKILL_CAST`）、插隊行動（`insertAction`） |
+| [PROTECTION.md](docs/PROTECTION.md) | 可選用的無敵、貫通、狀態解除、傷害縮放、保命（`LAST_STAND`）與護盾（`shield`） |
+| [FATIGUE.md](docs/FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
+| [SANITY.md](docs/SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
+| [SILENCE.md](docs/SILENCE.md) | 沉默：擋下指定招式，普攻被擋時改用替代攻擊 |
+| [TAGS.md](docs/TAGS.md) | 技能／傷害段／Buff 的自由標籤，傷害結算時合併成 `hit.tags` |
+| [AGGRO.md](docs/AGGRO.md) | 仇恨值如何加權目標抽選，以及用 Buff 做嘲諷與隱蔽 |
+| [SKILL_MODIFIERS.md](docs/SKILL_MODIFIERS.md) | 技能施放率 `skillCastRate`、無視防禦與敵方光環 |
+| [LUCK_EVENTS.md](docs/LUCK_EVENTS.md) | 幸運事件（紫／紅）與遞減曲線 |
+| [INANIMATE.md](docs/INANIMATE.md) | 不能行動的目標（`actionDisabled`／`lockedStats`）與整次攻擊結束後的反應 |
+
+### 誰在用
+
+- **我的同人（mydoujin）**：文字掛機 RPG，本框架就是從這個遊戲的戰鬥系統抽出來的。
+  文件裡許多「為什麼這樣設計」的段落，都來自它的實戰調整。
+  謝謝打通第 74 層的玩家們，這個框架因為你們而開源。
+
+如果你的遊戲也用了這個框架，歡迎開 issue 或 PR 把它加進來。
 
 ---
 
@@ -172,7 +180,7 @@ result.logs.forEach((log, index) => {
 | `HEAL` | 治療，日誌使用實際恢復量；`stat` 預設 `atk`，可改單一能力值或 `{ atk: 1, int: 1 }` 權重表（回復量 = Σ 能力值 × 權重 × `power`） |
 | `BUFF` | 附加狀態效果（`HOT` / `DOT` / `STAT` / `STUN`，見下方 `Buff`） |
 | `RESTORE_SP` | 恢復 SP，輸出 `SP_RECOVER` 日誌 |
-| `CHANGE_SANITY` | 增減已啟用單位的理智，支援正負 `amount`；見 [理智系統](SANITY.md) |
+| `CHANGE_SANITY` | 增減已啟用單位的理智，支援正負 `amount`；見 [理智系統](docs/SANITY.md) |
 | `SUMMON` | 召喚增援，需在建立引擎時注入 `summonFactory`（見「召喚與資源恢復」） |
 | `CAST_SKILL` | 呼叫另一個已註冊的技能，需注入 `skillResolver`（見「呼叫已註冊技能與定時效果」） |
 
@@ -198,20 +206,21 @@ result.logs.forEach((log, index) => {
 不需要自己 `npm init`。在您的專案中選一種安裝方式：
 
 ```bash
-# 直接裝 Git repo（最省事，適合自己或小團隊）
-npm install github:eddy3721/text-based-turn-battler-framework
+# 直接裝 GitHub 上的某個版本 tag
+npm install github:eddy3721/text-based-turn-battler-framework#v1.0.44
 
-# 或裝打包好的 tarball（適合部署環境無法存取外部 repo 時）
-npm install ./vendor/text-based-turn-battler-framework-1.0.23.tgz
+# 或在框架目錄 npm pack，把 tarball 隨遊戲一起 commit（部署環境連不到 GitHub 時）
+npm install ./vendor/text-based-turn-battler-framework-1.0.44.tgz
 ```
+
+版本變動見 [CHANGELOG.md](CHANGELOG.md)。
 
 引用方式都是：`const { BattleEngine } = require('text-based-turn-battler-framework');`
 （ESM 專案寫 `import { BattleEngine } from 'text-based-turn-battler-framework';`）。
 
-> 參考實作「我的桐人」選的是第二種：在框架目錄執行
-> `npm pack --pack-destination <遊戲>/backend/vendor --ignore-scripts`，把 tarball
-> 連同 lockfile 一起 commit。這樣部署機器只要 clone 遊戲本身就能 `npm ci`，
-> 不必存取這個 repo，也不會依賴未發佈的 commit；舊版 tarball 留著就是可回滾的產物。
+> 想在發版前先試改動，可以讓遊戲暫時指向本機原始碼：
+> `npm install ../text-based-turn-battler-framework`。確定之後在框架 commit、打 tag，
+> 遊戲再改回依賴那個 tag，部署時就不會用到沒有 commit 的程式碼。
 
 ### 2. 使用 Git 子模組 (Git Submodule)
 如果兩個專案都在 Git 上，您可以將戰鬥框架作為子模組引入 React 專案中。當戰鬥框架有更新並 push 到 Github 時，React 專案只需要下 `git submodule update --remote` 就能同步最新程式碼。
@@ -242,7 +251,7 @@ Skill 以最終 damage 產生 BLOCK 戰報（value 為減傷後傷害）。完�
 
 「這一擊不能致死、停在 1 HP」不要寫在 `BEFORE_DAMAGE`：那裡照陣列順序執行，攻擊方臨時插進來的
 增傷會排在後面把它蓋掉。改用 `trigger: 'LAST_STAND'`，它在所有倍率、`BEFORE_DAMAGE` 與無敵之後、
-而且只在這一擊仍會致死時執行，見 [PROTECTION.md](PROTECTION.md)。它在 action 裡寫的日誌會延到
+而且只在這一擊仍會致死時執行，見 [PROTECTION.md](docs/PROTECTION.md)。它在 action 裡寫的日誌會延到
 傷害那一行之後才印（1.0.39），直接寫「撐住了」即可，不必自己延到 `AFTER_DAMAGE_RECEIVED`。
 `block` 可為字串或 context 回呼，預設依最終傷害顯示完全格擋或部分減傷。
 被動不組裝整句。多段技能的前綴由技能自行決定，並不強制使用「第 X 擊」。
@@ -289,9 +298,9 @@ new Skill({ id: 'random_move', actions: [
 
 ## 傷害後反應與台詞
 
-防守方 `AFTER_DAMAGE_RECEIVED`、隨機部位與 `ON_PART_BREAK` 的設定及結算順序，見 [受傷後被動與部位破壞](DAMAGE_REACTIONS.md)。
+防守方 `AFTER_DAMAGE_RECEIVED`、隨機部位與 `ON_PART_BREAK` 的設定及結算順序，見 [受傷後被動與部位破壞](docs/DAMAGE_REACTIONS.md)。
 
-攻擊落空時由防守方描述自己是怎麼躲掉的（`ON_EVADE`、`evadeMethod`／`evadeMessage`），見 [閃避風格](EVASION.md)。
+攻擊落空時由防守方描述自己是怎麼躲掉的（`ON_EVADE`、`evadeMethod`／`evadeMessage`），見 [閃避風格](docs/EVASION.md)。
 
 `AFTER_DAMAGE_DEALT` 的 `enabled(self, hit)` 與 `action(self, hit, logger, engine)`
 可讀取 `hit.caster/target/skill/isNormalAttack/damage`。僅正傷害且雙方仍存活時觸發。
@@ -336,3 +345,9 @@ text: {
 
 只用在固定段數：普攻與速度連擊（`combo`）的段數依目標而不同，普攻照舊逐目標打完，`combo` 加 `wave` 直接拋錯。
 一次施放仍然是一次攻擊，`AFTER_ATTACK_RECEIVED` 對每個目標照樣只聚合一次。測試：`tests/hitOrder.test.js`。
+
+---
+
+## 授權
+
+[MIT](LICENSE)
