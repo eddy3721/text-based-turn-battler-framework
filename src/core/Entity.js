@@ -21,6 +21,8 @@ class Entity {
     this.team = team;
     this.stats = { ...stats }; // 複製一份，避免改到原始資料
     this.stats.luk = stats.luk ?? 0;
+    // 沒給 maxHp 時以開場 HP 為上限，否則治療與 HP_BELOW 會算出 NaN（1.0.46）。
+    this.stats.maxHp = stats.maxHp ?? stats.hp;
     this.stats.maxSp = stats.maxSp ?? stats.sp ?? 0;
     this.stats.sp = stats.sp ?? 0;
     this.stats.skillCastRate = stats.skillCastRate ?? 0.35;

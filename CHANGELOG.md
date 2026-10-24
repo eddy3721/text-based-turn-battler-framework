@@ -2,6 +2,13 @@
 
 版本號只往上加，不重複使用同一個版本號重新打包。沒有特別註明時，既有技能的行為與亂數序列不變。
 
+## 1.0.46（2026-10-25）
+
+- Entity 沒給 `stats.maxHp` 時改以開場 `hp` 為上限。之前會讓治療算出 NaN、`HP_BELOW` 被動永遠不觸發。
+- 新增 [docs/REFERENCE.md](docs/REFERENCE.md)（完整 API 速查）、[docs/MECHANICS.md](docs/MECHANICS.md)（原 README 的機制細節）、`llms.txt`（給 AI 的入口）與 `AGENTS.md`（修改框架的規則）。
+- 新增範例 `quickstart`、`boss-fight`、`party-support`、`control`、`replay`，並由 `tests/examples.test.js` 檢查各範例真的展示到對應機制。
+- README 改寫成可以直接執行的快速開始與文件地圖。
+
 ## 1.0.45（2026-10-25）
 
 - `BattleEngine` 新增 `rng` 選項：在 `start()` 期間改用自訂的亂數來源，同一個種子可以重現同一場戰鬥。沒有傳 `rng` 時亂數序列不變。

@@ -1,0 +1,66 @@
+# text-based-turn-battler-framework
+
+> 純 JavaScript（CommonJS，Node >= 20，無依賴）的回合制文字戰鬥引擎。建立 Entity（角色）與 Skill（一串 actions），`new BattleEngine(teamA, teamB, options).start()` 同步跑完整場，回傳 `{ winner, logs }`。Boss 機制用 passives（觸發器 + 函式）寫在遊戲層。戰報句子是繁體中文。
+
+安裝：`npm install github:eddy3721/text-based-turn-battler-framework#v1.0.46`
+匯入：`const { Entity, Skill, Buff, BattleEngine, Formulas, random, createSeededRandom } = require('text-based-turn-battler-framework')`
+
+## 最小範例
+
+```js
+const attack = new Skill({ id: 'attack', name: '攻擊', actions: [{ type: 'DAMAGE' }] });
+const hero = new Entity({ id: 'hero', name: '勇者', team: 'A', normalAttack: attack,
+  stats: { hp: 2000, sp: 60, atk: 150, def: 50, spd: 120 } });
+const boss = new Entity({ id: 'boss', name: '魔王', team: 'B', normalAttack: attack,
+  stats: { hp: 2100, sp: 60, atk: 130, def: 80, spd: 90 } });
+const { winner, logs } = new BattleEngine([hero], [boss]).start();
+```
+
+## 寫程式前必須知道的事
+
+- 每場戰鬥都要重新建立 Entity；引擎直接改寫傳入的物件（HP、SP、Buff）。被動的狀態放在建立函式的閉包裡。
+- `team` 只能是 `'A'` 或 `'B'`，要和放進 teamA / teamB 的位置一致。`stats` 至少要有 `hp`、`atk`、`spd`（沒有 spd 就沒人會行動）。
+- action 的 `targetType`：`ENEMY_SINGLE`（預設，依 aggro 加權）、`ENEMY_ALL`、`ALLY_SINGLE`、`ALLY_ALL`、`SELF`。
+- 段落預設沿用上一段的目標（`inheritTarget: true`）。第一段若是沒寫 targetType 的 TEXT，後面的 ENEMY_ALL 只會打到一個人。
+- BUFF action 用 `buffs: [ {...} ]`（陣列）。寫成 `buff:` 不會報錯，但什麼都不會附加。
+- Buff `duration` 算的是持有者自己的行動槽數，不是回合；每回合每人大約 2 個行動槽。
+- STAT Buff：`{ id, name, type: 'STAT', duration, effect: stats => { stats.atk *= 1.3; } }`。讀能力值用 `entity.getEffectiveStats()`。
+- 被動：`{ trigger, enabled?(self, ctx), action(self, ctx, logger, engine) }`。例外：`BEFORE_DAMAGE`、`LAST_STAND` 是 `(self, hit, logger)`；`ON_EVADE` 是 `(self, evasion)`；血量門檻是 `{ condition: 'HP_BELOW', threshold, action(self, logger, engine) }`。
+- 被動寫戰報：`logger.addLog({ type: 'SKILL_TEXT', actorId: self.id, message })`。
+- 要擲骰用框架的 `random()`，不要用 `Math.random()`，否則 `rng: createSeededRandom(seed)` 無法重現戰鬥。
+- 戰報文字可用 `text: { action, hit, miss, ... }` 片段覆寫，或 `message: ctx => string` 整句覆寫。BUFF 的預設開頭是空字串。
+- 不要為了 Boss 機制改框架原始碼；先找 REFERENCE.md 裡的觸發器與 BattleEngine 選項（hitResolver、actionTargetResolver、skillSelectionResolver、roundStart、battleEnd）。
+
+## 文件
+
+- [docs/REFERENCE.md](docs/REFERENCE.md): 完整 API 速查：Entity 參數、能力值、action 類型與欄位、Buff 欄位、全部觸發器與簽名、BattleEngine 選項與方法、日誌類型、常見的坑
+- [docs/MECHANICS.md](docs/MECHANICS.md): 召喚、資源、自定義公式、受傷前後被動、CAST_SKILL 與觸發型 Buff、逐波攻擊、可重現戰鬥
+- [docs/ACTIONS.md](docs/ACTIONS.md): BATTLE_START、AFTER_ACTION、ROUND_START、AFTER_REST、BEFORE_SKILL_CAST、insertAction、revive、各種 resolver
+- [docs/PROTECTION.md](docs/PROTECTION.md): 無敵、untouchable、forceMiss、damageTaken、healTaken、LAST_STAND、shield
+- [docs/COUNTERS.md](docs/COUNTERS.md): 反擊機率、counterSkill、counterStyle
+- [docs/EVASION.md](docs/EVASION.md): ON_EVADE / AFTER_EVADE
+- [docs/DAMAGE_REACTIONS.md](docs/DAMAGE_REACTIONS.md): 受傷後被動、部位破壞
+- [docs/AGGRO.md](docs/AGGRO.md): 仇恨、嘲諷、隱蔽
+- [docs/SILENCE.md](docs/SILENCE.md): 沉默
+- [docs/FATIGUE.md](docs/FATIGUE.md): 疲勞與喘息
+- [docs/SKILL_MODIFIERS.md](docs/SKILL_MODIFIERS.md): 技能施放率、無視防禦、敵方光環
+- [docs/TAGS.md](docs/TAGS.md): 自由標籤
+- [docs/LUCK_EVENTS.md](docs/LUCK_EVENTS.md): 幸運事件
+- [docs/INANIMATE.md](docs/INANIMATE.md): 不能行動的目標
+- [docs/SANITY.md](docs/SANITY.md): 可選理智系統
+
+## 範例（都可直接執行，固定種子）
+
+- [examples/quickstart.js](examples/quickstart.js): 最小的一場戰鬥
+- [examples/boss-fight.js](examples/boss-fight.js): BATTLE_START 護盾、HP_BELOW 狂暴、LAST_STAND、AFTER_ACTION + insertAction 大招、hitOrder wave、群體治療
+- [examples/party-support.js](examples/party-support.js): aggro 嘲諷、BEFORE_SKILL_CAST 擋招、AFTER_ACTION 鼓舞、ON_EVADE / AFTER_EVADE、healTaken
+- [examples/control.js](examples/control.js): silence、STUN chance、actionTargetResolver swapSides 混亂
+- [examples/replay.js](examples/replay.js): rng 重現、random()、ROUND_START、actionSlots + battleEnd 精彩重播
+- [examples/basic.js](examples/basic.js): DOT/HOT、SUMMON、CAST_SKILL
+
+## Optional
+
+- [CHANGELOG.md](CHANGELOG.md): 各版本新增的機制
+- [AGENTS.md](AGENTS.md): 修改框架本身時的規則
+- [src/core/BattleEngine.js](src/core/BattleEngine.js): 戰鬥迴圈與所有引擎選項的實作
+- [src/core/Skill.js](src/core/Skill.js): action 執行、目標選擇、戰報組句

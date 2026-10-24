@@ -10,7 +10,7 @@ function make(id, team, stats = {}) {
     skills: [
       new Skill({ id: `${id}_sweep`, name: '橫掃', spCost: 5, actions: [{ type: 'DAMAGE', targetType: 'ENEMY_ALL', power: 0.8 }] }),
       new Skill({ id: `${id}_poison`, name: '毒霧', spCost: 5, actions: [{ type: 'BUFF', targetType: 'ENEMY_SINGLE',
-        buff: { id: 'poison', name: '中毒', type: 'DOT', duration: 3, value: 15, chance: 0.5 } }] })
+        buffs: [{ id: 'poison', name: '中毒', type: 'DOT', duration: 3, value: 15 }] }] })
     ]
   });
 }
@@ -92,4 +92,10 @@ test('rng must be a function and seeds must be safe integers', () => {
     const value = rng();
     assert.ok(value >= 0 && value < 1);
   }
+});
+
+test('the seeded battle exercises skills and DOT, not just normal attacks', () => {
+  const logs = battle({ rng: createSeededRandom(42) }).logs;
+  assert.ok(logs.some(log => log.type === 'BUFF_EFFECT'), 'poison ticks');
+  assert.ok(logs.some(log => log.type === 'DAMAGE' && log.skillId?.endsWith('_sweep')), 'sweep lands');
 });

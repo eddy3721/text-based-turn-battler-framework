@@ -1,36 +1,136 @@
 # 文字對戰遊戲戰鬥模組 (Text-Based Turn-Battler Framework)
 
-這是一個基於純 JavaScript (Framework-Agnostic) 開發的回合制戰鬥核心引擎。專為類似「我的桐人」這類型的文字掛機或對戰遊戲所設計。本系統採用**一次性結算**與**資料驅動 (Data-Driven)** 的架構，讓您可以輕鬆地套用到 React、Vue、Node.js 甚至任何前端專案中。
+純 JavaScript 的回合制戰鬥引擎，給文字掛機、文字 RPG 這類「一鍵結算、看戰報」的遊戲用。
 
-無 runtime 依賴，測試只用 Node 內建的 `node:test`。
+- **一次性結算**：`engine.start()` 同步跑完整場，回傳勝負與逐行戰報（每行都有結構化欄位和中文句子）。
+- **資料驅動**：角色是 `Entity`，技能是一串 `actions`，被動是「觸發器 + 函式」，不用繼承任何類別。
+- **鉤子很多**：開場、回合開始、出招前、受傷前後、保命、閃避、行動後……Boss 機制都寫在遊戲層，不用改框架。
+- **可重現**：傳入種子亂數，同一個種子永遠跑出同一場戰鬥。
+- **無 runtime 依賴**，Node 20 以上；也能直接打包進前端。
+
+## 安裝
 
 ```bash
-npm run demo   # 跑一場完整的示範戰鬥，把戰報印到終端機
-npm test       # 執行測試
+npm install github:eddy3721/text-based-turn-battler-framework#v1.0.46
 ```
 
-示範戰鬥的原始碼在 [examples/basic.js](examples/basic.js)，展示基本 action type，
-是最快看懂「技能資料長什麼樣」的入口；可選理智則見 [examples/sanity.js](examples/sanity.js)。
+```js
+const { Entity, Skill, BattleEngine } = require('text-based-turn-battler-framework');
+// ESM：import { Entity, Skill, BattleEngine } from 'text-based-turn-battler-framework';
+```
 
-### 進階主題
+## 快速開始
+
+```js
+const { Entity, Skill, BattleEngine } = require('text-based-turn-battler-framework');
+
+// 技能是一串 actions，引擎依序執行。DAMAGE 預設打一個敵人，傷害 = atk × power（再扣防禦）。
+const slash = new Skill({ id: 'slash', name: '斬擊', actions: [{ type: 'DAMAGE' }] });
+const fireball = new Skill({ id: 'fireball', name: '火球術', actions: [
+  { type: 'DAMAGE', power: 1.8, spCost: 10, text: { action: ctx => `${ctx.caster.name} 詠唱火球術，` } }
+] });
+const claw = new Skill({ id: 'claw', name: '利爪', actions: [{ type: 'DAMAGE' }] });
+
+const hero = new Entity({
+  id: 'hero', name: '勇者', team: 'A',
+  stats: { hp: 2000, sp: 60, atk: 150, def: 50, spd: 120, cri: 0.2 },
+  normalAttack: slash,
+  skills: [fireball] // 每個行動槽預設 35% 機率從這裡抽一招（stats.skillCastRate）
+});
+const boss = new Entity({
+  id: 'boss', name: '魔王', team: 'B',
+  stats: { hp: 2100, sp: 60, atk: 130, def: 80, spd: 90, cri: 0.1 },
+  normalAttack: claw,
+  dialogues: { opening: '區區人類。', death: '不可能……' }
+});
+
+const result = new BattleEngine([hero], [boss]).start();
+for (const log of result.logs) console.log(log.message);
+console.log(result.winner); // 'TEAM_A' | 'TEAM_B' | 'DRAW'
+```
+
+```text
+戰鬥開始！
+魔王：「區區人類。」
+--- 第 1 回合 ---
+勇者 攻擊，會心一擊！對 魔王 造成了 169 點傷害！
+勇者 詠唱火球術，對 魔王 造成了 194 點傷害！
+魔王 攻擊，對 勇者 造成了 105 點傷害！
+...
+```
+
+這段就是 [examples/quickstart.js](examples/quickstart.js)，clone 之後 `node examples/quickstart.js` 就能跑。
+
+## 範例
+
+每個範例都可以直接執行，開頭註解列出它示範的機制。範例都有固定種子，每次跑出的戰報一樣；
+`tests/examples.test.js` 會檢查這些機制真的出現在戰報裡。
+
+| 範例 | 示範 |
+| --- | --- |
+| [quickstart.js](examples/quickstart.js) | 最小的一場戰鬥：Entity、Skill、普攻與技能、台詞 |
+| [boss-fight.js](examples/boss-fight.js) | Boss 階段：開場護盾（`BATTLE_START` + `shield`）、半血狂暴（`HP_BELOW`）、保命（`LAST_STAND`）、行動計數後插隊放大招（`AFTER_ACTION` + `insertAction`）、逐波全體攻擊（`hitOrder: 'wave'`）、群體治療 |
+| [party-support.js](examples/party-support.js) | 團隊配合：嘲諷（`aggro`）、替隊友擋招（`BEFORE_SKILL_CAST`）、隊友出手後鼓舞（`AFTER_ACTION`）、閃避方式與閃避後反應（`ON_EVADE` / `AFTER_EVADE`）、減療（`healTaken`）、同名自動編號 |
+| [control.js](examples/control.js) | 控制：沉默（`silence`）、機率麻痺（`STUN` + `chance`）、混亂敵我互換（`actionTargetResolver` + `swapSides`）、以 `int` 計算傷害 |
+| [replay.js](examples/replay.js) | 可重現：`rng` + `createSeededRandom`、鉤子裡用 `random()`、`ROUND_START` 被動、用 `actionSlots` + `battleEnd` 做精彩重播 |
+| [basic.js](examples/basic.js) | DOT／HOT、召喚（`SUMMON`）、呼叫已註冊技能（`CAST_SKILL`）、階段轉換 |
+| [sanity.js](examples/sanity.js) | 可選的理智系統 |
+
+## 文件
+
+先看 **[docs/REFERENCE.md](docs/REFERENCE.md)**：所有建構參數、能力值、action 欄位、觸發器、引擎選項、日誌類型，以及常見的坑。
+
+想知道某個機制的完整規則與設計理由，再看主題文件：
 
 | 文件 | 內容 |
 | --- | --- |
+| [MECHANICS.md](docs/MECHANICS.md) | 架構總覽、召喚與資源、自定義公式、受傷前後的被動、已註冊技能與定時效果、逐波攻擊、可重現戰鬥 |
+| [ACTIONS.md](docs/ACTIONS.md) | 戰鬥開場（`BATTLE_START`）、行動後（`AFTER_ACTION`）、回合開始（`ROUND_START`）、喘息之後（`AFTER_REST`）、出招之前（`BEFORE_SKILL_CAST`）、插隊（`insertAction`）、復活、各種 resolver |
+| [PROTECTION.md](docs/PROTECTION.md) | 無敵、貫通、狀態解除、傷害縮放、保命（`LAST_STAND`）與護盾（`shield`） |
 | [COUNTERS.md](docs/COUNTERS.md) | 一般反擊、技能反擊與傷害條件效果 |
-| [EVASION.md](docs/EVASION.md) | 落空時由防守方描述自己怎麼躲的（`ON_EVADE` / `AFTER_EVADE`） |
+| [EVASION.md](docs/EVASION.md) | 落空時由防守方描述自己怎麼躲（`ON_EVADE` / `AFTER_EVADE`） |
 | [DAMAGE_REACTIONS.md](docs/DAMAGE_REACTIONS.md) | 受傷後被動、隨機部位與部位破壞 |
-| [ACTIONS.md](docs/ACTIONS.md) | 戰鬥開場的被動（`BATTLE_START`）、行動槽出手後通知全場（`AFTER_ACTION`）、回合開始的被動（`ROUND_START`）、喘息之後（`AFTER_REST`）、出招之前（`BEFORE_SKILL_CAST`）、插隊行動（`insertAction`） |
-| [PROTECTION.md](docs/PROTECTION.md) | 可選用的無敵、貫通、狀態解除、傷害縮放、保命（`LAST_STAND`）與護盾（`shield`） |
-| [FATIGUE.md](docs/FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
-| [SANITY.md](docs/SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
-| [SILENCE.md](docs/SILENCE.md) | 沉默：擋下指定招式，普攻被擋時改用替代攻擊 |
-| [TAGS.md](docs/TAGS.md) | 技能／傷害段／Buff 的自由標籤，傷害結算時合併成 `hit.tags` |
 | [AGGRO.md](docs/AGGRO.md) | 仇恨值如何加權目標抽選，以及用 Buff 做嘲諷與隱蔽 |
+| [SILENCE.md](docs/SILENCE.md) | 沉默：擋下指定招式，普攻被擋時改用替代攻擊 |
+| [FATIGUE.md](docs/FATIGUE.md) | 疲勞、普攻逐擊耗體與喘息規則 |
 | [SKILL_MODIFIERS.md](docs/SKILL_MODIFIERS.md) | 技能施放率 `skillCastRate`、無視防禦與敵方光環 |
+| [TAGS.md](docs/TAGS.md) | 技能／傷害段／Buff 的自由標籤，傷害結算時合併成 `hit.tags` |
 | [LUCK_EVENTS.md](docs/LUCK_EVENTS.md) | 幸運事件（紫／紅）與遞減曲線 |
 | [INANIMATE.md](docs/INANIMATE.md) | 不能行動的目標（`actionDisabled`／`lockedStats`）與整次攻擊結束後的反應 |
+| [SANITY.md](docs/SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
 
-### 誰在用
+版本變動見 [CHANGELOG.md](CHANGELOG.md)。
+
+### 給 AI 助手
+
+[llms.txt](llms.txt) 是給 AI 讀的精簡入口：用法重點、檔案地圖和容易寫錯的地方。
+請 AI 幫你寫技能或 Boss 之前，先讓它讀 `llms.txt` 與 `docs/REFERENCE.md`。
+
+## 顯示戰報
+
+`result.logs` 每筆都有 `type` 和 `message`。最簡單的做法是逐行印 `message`；
+要做動畫或特效，就依 `type` 和欄位（`actorId`、`targetId`、`value`、`isCrit`……）自己排版：
+
+```js
+result.logs.forEach((log, index) => {
+  setTimeout(() => {
+    // 例如 DAMAGE 且 isCrit 時把文字放大變紅，BUFF_EFFECT 依 buffType 分顏色
+    appendLogToScreen(log);
+  }, index * 500);
+});
+```
+
+所有日誌類型與欄位見 [REFERENCE.md 的日誌一節](docs/REFERENCE.md#日誌resultlogs)。
+
+## 整合方式
+
+- **GitHub tag（推薦）**：如上方安裝指令，固定一個版本 tag。
+- **tarball**：在框架目錄 `npm pack`，把 `.tgz` 隨你的專案 commit，部署環境連不到 GitHub 時用。
+- **發版前先試改動**：`npm install ../text-based-turn-battler-framework` 讓專案暫時指向本機原始碼；
+  確定後在框架 commit、打 tag，再改回依賴那個 tag。
+- **Monorepo**：放在 `packages/battle-engine`，用 npm workspaces 連結。
+
+## 誰在用
 
 - **我的同人（mydoujin）**：文字掛機 RPG，本框架就是從這個遊戲的戰鬥系統抽出來的。
   文件裡許多「為什麼這樣設計」的段落，都來自它的實戰調整。
@@ -38,335 +138,14 @@ npm test       # 執行測試
 
 如果你的遊戲也用了這個框架，歡迎開 issue 或 PR 把它加進來。
 
----
-
-## 系統架構總覽
-
-### 召喚與資源恢復
-
-- `Entity.stats.maxSp` 可明確設定；省略時採初始 `sp`（兩者皆省略為 0）。`heal(amount, logger)` 與 `restoreSp(amount)` 回傳實際恢復量，不超過上限、不復活死亡單位。
-- 技能可加入 `{ type: 'RESTORE_SP', amount: 8, targetType: 'ALLY_ALL' }`，輸出 `SP_RECOVER`，包含 `actorId`、`targetId`、`value` 與技能 metadata。`HEAL` 日誌同樣使用實際恢復量。
-- `{ type: 'SUMMON', monsterId: 'goblin', maxAlive: 2, maxTotal: 4, spCost: 20 }` 由 `new BattleEngine(teamA, teamB, { summonFactory })` 處理。工廠簽章為 `(monsterId, { entityId }) => Entity`；引擎登錄陣營與 `summonerId`，每位召喚者分別計數，增援下一回合才進入行動順序。
-- `RESTORE_SP` 與 `SUMMON` 的日誌文字跟其他 action 一樣走片段拼裝：`RESTORE_SP` 是 `action + recover`，`SUMMON` 是 `action + summon`（`ctx.target` 為剛登場的增援，日誌由引擎寫出但文案仍由技能決定），`action.message` 一樣可整句覆寫。
-- 召喚可用非空 `monsterIds` 陣列取代單一 `monsterId`，每次等機率抽一個 ID。引擎保留工廠提供的原始名稱，不附加增援文字；同名單位以唯一實體 ID 區分。
-- 增援預設加入召喚者的陣營（工廠自己填的 `team` 會被蓋掉）。工廠可在回傳的實體上標 `summonHostile: true`，讓它改站到**對面**——召喚不保證是幫手（儀式失控、信號引來入侵者）。`summonerId` 照樣記錄，`maxAlive` 掃兩邊陣營，敵對增援一樣佔名額。文案可讀 `ctx.hostile` 分支。
-- 工廠回傳 `null`／`undefined` 代表「這次沒有可用的增援」（素材耗盡、牢籠已空、放下的印記沒人回應）。引擎不新增實體，改寫出 `SUMMON_FAILED`，文案走 `SUMMON` 的 `action + fail` 片段（預設「X 沒有得到任何回應。」），亦可用 `action.failMessage` 整句覆寫；此時 `ctx.target` 為 null。**失敗一樣計入 `maxTotal`**——計的是嘗試而非成功，否則招不到人的技能會在之後每個行動槽重試並洗版。
-- `Skill.canCast(entity, context?)` 及 `execute(caster, allies, enemies, logger, context?)` 的可選 context 為 BattleEngine；未注入工廠或已達召喚上限時，召喚技能不可選且不消耗 SP。既有無召喚技能可照舊呼叫。
-- `Entity` 可設定 `openingSkill`。首次可行動時若可施放則使用一次，否則走一般技能抽選；暈眩不消耗首次行動機會。
-- Buff 設定 `stackPolicy: 'refresh'` 時替換同 ID 效果並重設時間；省略則維持原本可堆疊行為。時間仍以目標自己的行動槽結束時計算。
-- 引擎選項 `openingLogs` 可傳入遊戲層的開場敘事紀錄。工廠、故事、怪物資料仍由遊戲負責。
-
-整個引擎分為五個核心模組：
-
-1. **`Entity` (戰鬥實體)**
-   - 敵我雙方皆使用相同的 `Entity` 類別，統一了狀態 (HP, SP, 能力值) 以及增益狀態 (Buffs) 的管理。
-   - 內建 `passives` (被動技能/事件觸發) 陣列，方便實作「半血狂暴」、「死後復活」等多階段變身效果。
-
-2. **`Skill` (技能系統)**
-   - 採用**動作分段 (Actions)** 結構設計。一個技能不再只是單純的數字，而是由多個 `action` 組成的陣列。
-   - 支援：多段連擊演出、多行文字戰報、中途扣除 SP、依序賦予 Buff 或補血。
-   - 每個動作可決定是否延續上一個動作的目標 (`inheritTarget`)。
-
-3. **`BattleEngine` (戰鬥引擎)**
-   - 控制整場戰鬥的迴圈。呼叫 `start()` 後會在瞬間計算完所有的回合。
-   - 負責判定技能施放率（預設 35% 機率施放主動技能，否則退回普通攻擊）。
-   - 負責管理勝負條件並輸出結構化的 `logs`（戰鬥日誌）。
-
-4. **`Buff` (狀態效果)**
-   - 處理持續性效果，如 `HOT` (持續恢復)、`DOT` (持續傷害)、`STAT` (能力值加成)、`STUN` (無法行動)。
-   - `STUN` 可加上 `chance`（0 < chance ≤ 1，省略為 1）做成麻痺：
-     buff 在命中當下必定附加，`chance` 決定的是**每個行動槽各擲一次**要不要真的擋下行動，
-     不是附加的機率。想要「機率附加、附加後必定暈眩」請在施加端自己擲骰。
-   - `message` 可覆寫被擋下時的戰報文字，收字串或 `({ entity, buff }) => string`；
-     省略時沿用 `${name} 無法行動！`。
-   - 擲骰只發生在 `BattleEngine` 行動槽開頭的 `entity.rollStun()`。
-     `canAct()` 只認 `chance` 為 1 的暈眩，因此 `chance < 1` 的麻痺不影響反擊與幸運事件
-     （這兩處也呼叫 `canAct()`，若在那裡跟著擲骰會在同一個槽得到互相矛盾的結果）。
-
-5. **`Formulas` (公式庫)**
-   - 將所有數值計算獨立抽離的工具類別，包含傷害計算、爆擊判定、命中判定、回合行動順序等。
-
----
-
-## 其他專案該怎麼套用？
-
-由於本框架無依賴任何前端 UI 函式庫，您可以直接將 `src` 資料夾複製到您的專案中。
-
-### 1. 匯入模組
-在您的遊戲邏輯組件中（例如 React 的某個 Page 或 Hook）匯入：
-```javascript
-import { Entity, Skill, BattleEngine } from './src/index';
-```
-
-### 2. 定義技能與實體
-根據您的企劃文件建立技能庫與角色資料。這通常會從您的伺服器 API 或是 JSON 設定檔讀取：
-```javascript
-const normalAttack = new Skill({ ... });
-const fireball = new Skill({ ... });
-
-const player = new Entity({
-  id: 'p1',
-  name: '勇者',
-  team: 'A', // 透過 Team 字串來區分敵我
-  stats: { hp: 1000, maxHp: 1000, sp: 100, atk: 150, def: 50, spd: 120, cri: 0.2 },
-  normalAttack: normalAttack,
-  skills: [fireball],
-  passives: []
-});
-```
-
-### 3. 執行戰鬥並取得結果
-這部分通常發生在玩家點擊「挑戰 Boss」或是背景掛機結算時：
-```javascript
-const engine = new BattleEngine([player], [boss]);
-const result = engine.start(); 
-
-// result.winner 會回傳獲勝隊伍 ('TEAM_A', 'TEAM_B', 或 'DRAW')
-// result.logs 包含了整場戰鬥的所有細節
-```
-
-建立 `BattleEngine` 時會依 `teamA`、`teamB` 的陣列順序，統一處理同場
-角色與怪物的同名問題：第一位保留原名，後續為 `桐人2`、`桐人3`，不加空格。
-敵我同名也共用編號；若 `桐人2` 本來就是其他單位的原名，會跳過該號碼以免撞名。
-框架直接更新戰鬥實體的 `name`，技能、被動與回傳的 `finalTeamA`／`finalTeamB`
-都會使用相同名稱，`id` 不變。結算文字請依 `id` 取回實體的戰鬥名稱。
-重用同一實體建立新戰鬥時，框架會從原名重新編號。呼叫端只需提供角色或怪物
-本名，不需附加玩家名稱或預先加上 A／B 後綴。
-
-#### 可重現的戰鬥（`rng`，1.0.45）
-
-框架裡所有擲骰（命中、爆擊、傷害浮動、反擊、目標抽選、幸運事件……）預設都用 `Math.random`。
-建立引擎時傳入 `rng`，就改用你給的亂數來源；同一個種子永遠跑出同一場戰鬥，可以拿來做重播、
-平衡模擬或回歸測試：
-
-```javascript
-const { BattleEngine, createSeededRandom, random } = require('text-based-turn-battler-framework');
-
-const seed = 20261025;
-const result = new BattleEngine([player], [boss], { rng: createSeededRandom(seed) }).start();
-// 把 seed 存下來，之後用同樣的隊伍與同一個 seed 再跑一次，就會得到一模一樣的 result.logs
-```
-
-- `rng` 是回傳 [0, 1) 數字的函式，只在 `start()` 執行期間生效，跑完（含拋錯）就換回原本的來源。
-- 沒有傳 `rng` 時行為和舊版完全相同，亂數序列不變。
-- 遊戲層的鉤子與被動若也要擲骰，請呼叫框架匯出的 `random()` 而不是 `Math.random()`，
-  才會跟著同一個種子走。
-- `createSeededRandom` 是 mulberry32，只用來重現戰鬥，不適合任何需要安全性的場合。
-
-### 4. 處理戰鬥日誌 (UI 渲染)
-前端專案**最重要**的工作就是把 `result.logs` 漂漂亮亮地渲染出來。
-您可以寫一個計時器 (例如 `setTimeout`)，每隔 0.5 秒從 logs 陣列拿出一筆資料顯示在畫面上，營造出戰鬥的動態感：
-```javascript
-// React 範例概念
-result.logs.forEach((log, index) => {
-  setTimeout(() => {
-    // 根據 log.type 來決定顯示方式，例如：
-    // 若 type 是 'DAMAGE' 且 isCrit 為 true，文字顯示為紅色放大震動
-    appendLogToScreen(log.message); 
-  }, index * 500); 
-});
-```
-
----
-
-## 開發者需要「自定義」什麼東西？
-
-這套框架提供了骨幹，但具體的遊戲體驗需要您自行定義以下內容：
-
-### 1. 修改數值公式 (`src/utils/Formulas.js`)
-所有數值計算都集中在這個檔案，主要常數的上方都有一段「為什麼是這個值」的註解。
-目前的實作是：
-
-- **傷害**：`攻擊能力 × 技能倍率 × (300 / (防禦 + 300))`，再套 ±10% 浮動、最低 1 點。
-  `300` 是減傷常數（防禦剛好等於它時減傷 50%）。攻擊能力預設讀 `atk`，技能可用
-  `statKey: 'int'` 改讀其他能力值，`ignoreDefense` 可跳過減傷。
-- **爆擊**：機率為 `stats.cri`，倍率為 `stats.criDmg`（省略為 1.5 倍）。
-- **命中**：`技能命中率 + hit/100 - eva/(eva + 100)`，保底 10%，因此不存在完全閃避。
-- **行動順序**：不是單純比 SPD，而是**以速度為權重的抽籤**。每回合有
-  `存活人數 × 2` 個行動槽，被抽中的人速度暫時降 3/4，所以快的人搶得到更多次行動，
-  但不會壟斷整個回合。
-- **連擊**：由速度差決定次數，速度差每 100 點提高下限、每 40 點提高上限。
-
-您需要依自己的遊戲平衡調整的，通常是屬性相剋倍率、等級差修正，或是把行動順序
-換成跑條 / Action Gauge 系統。
-
-### 2. 擴充更多類型的 Action (在 `Skill.js`)
-目前 `Skill.js` 的 `actions` 支援八種 `type`：
-
-| type | 用途 |
-| --- | --- |
-| `TEXT` | 只輸出一行戰報，不結算任何數值（用於起手台詞、演出） |
-| `DAMAGE` | 傷害，支援 `hits` 多段、`power` 倍率、`statKey`、`accuracy`、`hitOrder`（見下方多段全體攻擊） |
-| `HEAL` | 治療，日誌使用實際恢復量；`stat` 預設 `atk`，可改單一能力值或 `{ atk: 1, int: 1 }` 權重表（回復量 = Σ 能力值 × 權重 × `power`） |
-| `BUFF` | 附加狀態效果（`HOT` / `DOT` / `STAT` / `STUN`，見下方 `Buff`） |
-| `RESTORE_SP` | 恢復 SP，輸出 `SP_RECOVER` 日誌 |
-| `CHANGE_SANITY` | 增減已啟用單位的理智，支援正負 `amount`；見 [理智系統](docs/SANITY.md) |
-| `SUMMON` | 召喚增援，需在建立引擎時注入 `summonFactory`（見「召喚與資源恢復」） |
-| `CAST_SKILL` | 呼叫另一個已註冊的技能，需注入 `skillResolver`（見「呼叫已註冊技能與定時效果」） |
-
-如果您的企劃有更複雜的機制（例如「偷竊」、「吸血」、「復活」或「驅散敵方 Buff」），
-您需要在 `Skill.js` 的 `execute` 迴圈中增加對應的 `action.type` 處理邏輯。
-
-### 3. 技能與裝備的 JSON 化
-因為目前技能的 `message` 參數使用了 Arrow Function 來做到字串格式化，如果您希望技能設定可以完全放在資料庫 (Database) 中當作純 JSON 傳輸，您會需要寫一個 Parsing 層，將 `{caster} 攻擊了 {target}` 這種字串解析成實際的文字，藉此拔除程式碼中的 Function。
-
-### 4. 觸發器與被動系統 (`Entity.js` 的 `passives`)
-`ON_HP_CHANGE` / `condition: 'HP_BELOW'` 用於一次性階段轉換，僅存活單位會觸發。
-技能傷害先寫入戰報，再執行 `action(self, logger, engine)`，可透過 engine 立即施放反擊。
-`trigger: 'AFTER_DAMAGE_DEALT'` 用於逐擊追加效果，詳見下方。
-
----
-
-## 專案整合與套用最佳實務
-
-如果您擔心未來戰鬥框架更新時，每次都要「手動複製資料夾」會很麻煩，這裡有幾種業界常見的整合方式：
-
-### 1. (推薦) 當成 NPM 套件安裝
-本框架已經是一個可安裝的套件（`main` 指向 `src/index.js`，無任何 runtime 依賴），
-不需要自己 `npm init`。在您的專案中選一種安裝方式：
+## 開發
 
 ```bash
-# 直接裝 GitHub 上的某個版本 tag
-npm install github:eddy3721/text-based-turn-battler-framework#v1.0.44
-
-# 或在框架目錄 npm pack，把 tarball 隨遊戲一起 commit（部署環境連不到 GitHub 時）
-npm install ./vendor/text-based-turn-battler-framework-1.0.44.tgz
+npm test          # 全部測試（含範例檢查）
+npm run demo      # 跑 examples/basic.js
 ```
 
-版本變動見 [CHANGELOG.md](CHANGELOG.md)。
-
-引用方式都是：`const { BattleEngine } = require('text-based-turn-battler-framework');`
-（ESM 專案寫 `import { BattleEngine } from 'text-based-turn-battler-framework';`）。
-
-> 想在發版前先試改動，可以讓遊戲暫時指向本機原始碼：
-> `npm install ../text-based-turn-battler-framework`。確定之後在框架 commit、打 tag，
-> 遊戲再改回依賴那個 tag，部署時就不會用到沒有 commit 的程式碼。
-
-### 2. 使用 Git 子模組 (Git Submodule)
-如果兩個專案都在 Git 上，您可以將戰鬥框架作為子模組引入 React 專案中。當戰鬥框架有更新並 push 到 Github 時，React 專案只需要下 `git submodule update --remote` 就能同步最新程式碼。
-
-### 3. Monorepo 架構 (如 Turborepo 或 NPM Workspaces)
-把「戰鬥引擎」跟「React 前端」放在同一個大型 Repo 底下，分成 `packages/engine` 和 `apps/web`，兩邊可以連動開發，修改引擎會即時反映在前端。
-
-### 💡 如果我還是想直接複製，應該放在 React 的哪裡？需要改名嗎？
-如果您選擇直接複製 `src` 資料夾：
-- **放置位置**：通常會放在 React 專案的 `src/lib/battler-engine/` 或是 `src/features/combat/` 底下。
-- **需要改名嗎？**：強烈建議**將框架原本的 `src` 資料夾改名**為 `battler-engine` 或是 `core`，以免跟 React 專案本身的 `src` 搞混。
-- 這樣引入時就會長得像：`import { BattleEngine } from '../lib/battler-engine/index';`
-
----
-
-## 受傷前被動與格擋
-
-Entity 支援可重複執行的 `trigger: 'BEFORE_DAMAGE'` 被動。可選的
-`enabled(self, hit)` 回傳是否啟用，`action(self, hit, logger)` 修改本擊的
-`hit.damage`。`hit` 包含 target，以及 Skill 傳入的 caster、skill、action、
-hitIndex、hits（本次攻擊總段數）、isCrit。直接呼叫 takeDamage 時，攻擊來源欄位可能不存在。
-
-格擋可設定 `hit.blocked = true` 與 `hit.blockMethod = '盾牌'`。takeDamage 回傳處理結果，
-Skill 以最終 damage 產生 BLOCK 戰報（value 為減傷後傷害）。完全格擋不觸發
-血量變動被動；後續 BUFF 動作仍獨立生效。既有 HP_BELOW 被動維持一次性觸發。
-
-格擋文字使用技能的 `text.action` / `text.combo` 前綴，加上 `text.block`。
-
-「這一擊不能致死、停在 1 HP」不要寫在 `BEFORE_DAMAGE`：那裡照陣列順序執行，攻擊方臨時插進來的
-增傷會排在後面把它蓋掉。改用 `trigger: 'LAST_STAND'`，它在所有倍率、`BEFORE_DAMAGE` 與無敵之後、
-而且只在這一擊仍會致死時執行，見 [PROTECTION.md](docs/PROTECTION.md)。它在 action 裡寫的日誌會延到
-傷害那一行之後才印（1.0.39），直接寫「撐住了」即可，不必自己延到 `AFTER_DAMAGE_RECEIVED`。
-`block` 可為字串或 context 回呼，預設依最終傷害顯示完全格擋或部分減傷。
-被動不組裝整句。多段技能的前綴由技能自行決定，並不強制使用「第 X 擊」。
-`action.message` 仍優先於所有片段，需自行根據 `ctx.blocked`、`ctx.blockMethod`
-與 `ctx.value`（減傷後傷害）處理格擋演出；未格擋時前兩者為 false / null。
-
-## 呼叫已註冊技能與定時效果
-
-遊戲端管理技能表，建立引擎時注入 `skillResolver: id => getSkill(id)`。框架不持有遊戲註冊表。
-
-```js
-new Skill({ id: 'random_move', actions: [
-  { type: 'CAST_SKILL', skillIds: ['dagger', 'hammer', 'spear'], spCost: 12 }
-] });
-```
-
-`CAST_SKILL` 等機率抽取一個可用技能；單一 ID 為指定施放。候選不必在施放者的 `skills` 中。
-子技能自行選目標、使用自己的文案及日誌 skillId，免 SP 且不占行動槽。
-召喚上限等非 SP 條件仍有效；無可用候選時不施放。未知 ID 或缺少解析器會報錯。
-執行與可施放檢查均阻擋同一施放者呼叫鏈中的重複技能；另一名角色仍可使用同一技能反擊。
-循環候選不會造成無窮遞迴。
-遊戲端應在註冊表完成後驗證 CAST_SKILL 與 Buff 的所有 skillIds。
-
-也可從被動呼叫 `engine.castSkill(caster, skillIds, options?)`。
-`options.targets` 可指定被呼叫技能第一個 DAMAGE 動作的目標（例如命中後對同一人爆炸）；
-後續動作沿用既有 inheritTarget 規則。一般隨機技能不要傳 targets，以使用技能原本的選人設定。
-低階 `Skill.execute(..., engine, { ignoreSp: true })` 及 `canCast(entity, engine, { ignoreSp: true })`
-使用每次執行設定，絕不改寫共用 Skill；一般呼叫不傳此設定。
-
-自我蓄力可在 BUFF 動作中設定：
-
-```js
-{ id: 'charge', trigger: 'BEFORE_ACTION', remainingTriggers: 1,
-  skillIds: ['dagger', 'hammer', 'spear'], stackPolicy: 'refresh' }
-```
-
-這類 Buff 在下一次可行動前先消耗，再呼叫技能，之後仍有正常行動；暈眩時延後。
-`trigger: 'ROUND_START', remainingTriggers: 2` 則在後續兩個全局回合開始各觸發一次，
-不受持有者行動次數影響。透過技能施加的 Buff 不會於施加當回合立即觸發 ROUND_START。
-直接施加時用 `entity.addBuff(config, engine)` 記錄當前回合。
-重複 refresh 會重新計算剩餘次數；死亡時清除定時效果。
-這類 Buff 的壽命由 remainingTriggers 控制，不讀取 duration；舊 Buff 維持行動槽計時。
-定時技能由 Buff 持有者施放，因此場地攻擊應將 Buff 附加在施放者自己身上。
-
-## 傷害後反應與台詞
-
-防守方 `AFTER_DAMAGE_RECEIVED`、隨機部位與 `ON_PART_BREAK` 的設定及結算順序，見 [受傷後被動與部位破壞](docs/DAMAGE_REACTIONS.md)。
-
-攻擊落空時由防守方描述自己是怎麼躲掉的（`ON_EVADE`、`evadeMethod`／`evadeMessage`），見 [閃避風格](docs/EVASION.md)。
-
-`AFTER_DAMAGE_DEALT` 的 `enabled(self, hit)` 與 `action(self, hit, logger, engine)`
-可讀取 `hit.caster/target/skill/isNormalAttack/damage`。僅正傷害且雙方仍存活時觸發。
-例如 enabled 檢查 isNormalAttack，再呼叫獨立爆炸技能，即可防止爆炸反覆觸發自己。
-順序為本擊戰報 → 死亡或 HP_BELOW 反應 → 存活者追加效果 → 下一擊；
-反擊殺死施放者或戰鬥結束時，剩餘動作停止。
-直接 `takeDamage(amount, logger, { engine })` 可使用共用反應與死亡結算；
-需自行先記錄傷害時，傳 `deferReactions: true`，寫完日誌再呼叫
-`target.finishDamage(outcome, logger, engine)`。DOT 已使用此流程。
-直接治療可傳 `entity.heal(amount, logger, { engine })`，讓血量被動取得引擎；
-HEAL 技能與 HOT 也會在回復日誌之後傳入引擎、檢查血量被動。
-DOT 與 HOT 每次結算都記成 `BUFF_EFFECT`，並帶 `buffId` 與 `buffType`（`'DOT'` / `'HOT'`），
-顯示端可依此區分傷害與回復。
-
-Entity 可設定 `dialogues: { opening, death, victory }`（各為台詞本體字串）。
-引擎補上戰鬥名稱及引號，產生 `BOSS_DIALOGUE`；各事件只播一次，平手不播勝利台詞。
-前端自行決定這種日誌的顏色。死亡紀錄由引擎集中去重，涵蓋直接技能、DOT、派生與反擊。
-
-```js
-text: {
-  action: '揮劍橫斬，',
-  combo: '接著反手上挑，',
-  block: ctx => `劍刃被 ${ctx.target.name} 的${ctx.blockMethod}擋住，造成 ${ctx.value} 點傷害！`
-}
-```
-
-### 多段全體攻擊的順序（`hitOrder`，1.0.31）
-
-多段的 `ENEMY_ALL` 預設逐目標打完（A 第 1、2 擊 → B 第 1、2 擊）。
-`hitOrder: 'wave'` 改成逐波：第 1 擊掃過所有人，再第 2 擊掃過所有人。
-第 2 波起會先印 `text.wave`（`SKILL_TEXT`，ctx 有 `hitIndex`、`targets`），不設就不印。
-逐波時每個目標在每一波都是第一行，開頭一律用 `text.action`，不用 `combo`；反擊行沿用同一個開頭。
-
-```js
-{ type: 'DAMAGE', targetType: 'ENEMY_ALL', hits: 2, hitOrder: 'wave',
-  text: { action: '', wave: '風勢又折了回來——' } }
-// 但是遭桐人反擊，受到 490 點傷害！
-// 對 羅羅亞·索隆 造成了 120 點傷害！
-// 風勢又折了回來——
-// 對 桐人 造成了 273 點傷害！ …
-```
-
-只用在固定段數：普攻與速度連擊（`combo`）的段數依目標而不同，普攻照舊逐目標打完，`combo` 加 `wave` 直接拋錯。
-一次施放仍然是一次攻擊，`AFTER_ATTACK_RECEIVED` 對每個目標照樣只聚合一次。測試：`tests/hitOrder.test.js`。
-
----
+改框架的規則（亂數序列、版本號、文件）寫在 [AGENTS.md](AGENTS.md)。
 
 ## 授權
 
