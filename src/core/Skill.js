@@ -139,6 +139,44 @@ function composeMessage(action, ctx, { isComboHit = false, isHitLanded = true } 
   return lead + (ctx.isCrit ? part(text.crit) : '') + part(text.hit);
 }
 
+/**
+ * 一次施放的結果（CastReport，1.0.47）：execute 的回傳值。
+ *
+ * 給「打中才觸發」的附帶效果用：昏迷、流血、感染該掛在**實際被打的人**身上，
+ * 而不是呼叫端原本想打的那個人。以前拿不到這份資料，遊戲層只能翻 logger.logs 找 MISS、
+ * 或在打之前記下血量再比較，兩種都會在目標被換掉（混亂反轉）、護盾吸收、同時被治療時判錯。
+ *
+ * 範圍是這一次 execute 的傷害段，跟 AFTER_ATTACK_DEALT 同一條界線：
+ * 別人的反擊、CAST_SKILL 叫出來的子技能各有自己的結果，不算在這裡。
+ * 覆寫了 execute 的技能不一定會把結果往上傳，只有直接走基底 Skill 的呼叫保證拿得到。
+ *
+ * targets 每個目標一筆，依第一次出手的順序：
+ *   attempts 出手幾擊（含落空、被反擊截下的）；missed 落空；countered 被反擊截下；
+ *   landed 真的打到身上的擊數（含被格擋、被護盾吃掉）；blocked 其中被格擋的；crits 爆擊；
+ *   damage 戰報上的傷害合計；actualDamage 實際扣掉的 HP；shieldAbsorbed 護盾吸收；defeated 施放結束時已倒下。
+ * landed（陣列）是至少打到一擊的目標，給最常見的「打中的人身上掛效果」用。
+ */
+function createCastReport(skill, caster) {
+  return { skill, caster, targets: [], landed: [] };
+}
+
+function castEntry(report, target) {
+  if (!report) return null;
+  let entry = report.targets.find(item => item.target === target);
+  if (!entry) {
+    entry = { target, attempts: 0, landed: 0, missed: 0, countered: 0, blocked: 0, crits: 0,
+      damage: 0, actualDamage: 0, shieldAbsorbed: 0, defeated: false };
+    report.targets.push(entry);
+  }
+  return entry;
+}
+
+function finishCastReport(report) {
+  for (const entry of report.targets) entry.defeated = !entry.target.isAlive;
+  report.landed = report.targets.filter(entry => entry.landed > 0).map(entry => entry.target);
+  return report;
+}
+
 class Skill {
   constructor({ id, name, actions = [], tier = 'standard', counterStyle = 'summary',
     uncounterable = false, counterChanceMultiplier = 1, tags }) {
@@ -272,17 +310,18 @@ class Skill {
     }
   }
 
-  // 執行技能
+  // 執行技能。回傳這一次施放的結果（CastReport，1.0.47），見 createCastReport。
   execute(caster, allies, enemies, logger, context, options = {}) {
-    if (caster.actionDisabled || caster.isPanicked?.()) return;
+    const report = createCastReport(this, caster);
+    if (caster.actionDisabled || caster.isPanicked?.()) return finishCastReport(report);
     // Aggregate actual HP loss across every hit of this cast, separately per target.
     const receivedAttacks = new Map();
     const run = () => {
       // 出招前問一次敵方（BEFORE_SKILL_CAST，1.0.35），他們可以壓低這一招所有傷害段的傷害。
       const cast = context?.notifySkillCasting?.(caster, this);
       const castDamageMultiplier = cast?.damageMultiplier ?? 1;
-      const result = this._execute(caster, allies, enemies, logger, context,
-        { ...options, receivedAttacks, castDamageMultiplier });
+      this._execute(caster, allies, enemies, logger, context,
+        { ...options, receivedAttacks, castDamageMultiplier, report });
       for (const [target, hit] of receivedAttacks) {
         target.runDamagePassives('AFTER_ATTACK_RECEIVED', hit, logger, context);
         context?.settleDeaths();
@@ -300,7 +339,7 @@ class Skill {
         context?.checkWinCondition();
       }
       context?.notifySkillCast?.(caster, this);
-      return result;
+      return finishCastReport(report);
     };
     return context ? context.withSkill(caster, this, run) : run();
   }
@@ -353,8 +392,16 @@ class Skill {
       const swappedSides = targetType !== baseTargetType;
       // 反轉下的指定目標：透過 engine.targetPool／selectTargets 挑的已經站在反轉後那一邊，照用；
       // 直接從 enemies 挑的會打錯邊，作廢後照反轉後的 targetType 重抽（1.0.41 之前一律作廢）。
-      if (action.type === 'DAMAGE' && forcedTargets && (!swappedSides ||
-          context?.forcedTargetsFollowSwap?.(caster, baseTargetType, forcedTargets))) {
+      const forcedFollows = !swappedSides || Boolean(forcedTargets &&
+        context?.forcedTargetsFollowSwap?.(caster, baseTargetType, forcedTargets));
+      // 嚴格模式（strictTargeting，1.0.47）：不靜默重抽，直接拋錯。重抽讓傷害照樣打得出去、戰報也正常，
+      // 但呼叫端還以為打的是自己挑的那個人，後面的附帶效果就會掛錯人（打了自己，昏迷卻落在對面）。
+      if (action.type === 'DAMAGE' && forcedTargets && !forcedFollows && context?.strictTargeting) {
+        throw new Error(`Skill "${this.id}": options.targets were picked from the original side, but this cast is ` +
+          'side-swapped (confusion or control). Pick them with engine.targetPool() or engine.selectTargets() ' +
+          'so they follow the swap. (strictTargeting)');
+      }
+      if (action.type === 'DAMAGE' && forcedTargets && forcedFollows) {
         currentTargets = forcedTargets.filter(target => target.isAlive);
         forcedTargets = null;
       } else if (!inherit || currentTargets.length === 0 || (pending && swappedSides)) {
@@ -400,6 +447,8 @@ class Skill {
         if (isNormalAttack && !caster.spendSp(caster.getBasicAttackCost(), logger)) return false;
 
         const hitIndex = i + 1;
+        const record = castEntry(options.report, target);
+        if (record) record.attempts++;
 
         // A successful counter has already won its reaction check, so its reply cannot miss.
         const rolls = !context?.counterSource && !action.ignoreInvincible;
@@ -430,6 +479,7 @@ class Skill {
               { isComboHit, isHitLanded: false }
             )
           });
+          if (record) record.missed++;
           // 反應側排在 MISS 之後：先讓戰報說「躲掉了」，後果才接在下一行。
           target.runEvadeReactions(evasion, logger, context);
           return true;
@@ -440,7 +490,10 @@ class Skill {
 
         // 每一擊各自判定：多段技能挨的刀多，給對手的機會就該多。
         if (context?.tryCounter(caster, target, this,
-          { action, hitIndex, isComboHit })) return true;
+          { action, hitIndex, isComboHit })) {
+          if (record) record.countered++;
+          return true;
+        }
 
         const isCrit = Formulas.isCritical(caster);
         // 傷害預設依賴 atk；action.stat 可讓法術等技能改用 int 或其他能力。
@@ -475,6 +528,14 @@ class Skill {
         }
         damage = outcome.damage;
         if (damage > 0) damagedTargets.add(target);
+        if (record) {
+          record.landed++;
+          if (outcome.blocked) record.blocked++;
+          if (isCrit) record.crits++;
+          record.damage += damage;
+          record.actualDamage += outcome.actualDamage || 0;
+          record.shieldAbsorbed += outcome.shieldAbsorbed || 0;
+        }
 
         logger.addLog({
           type: outcome.blocked ? 'BLOCK' : 'DAMAGE',

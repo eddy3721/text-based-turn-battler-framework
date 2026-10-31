@@ -131,3 +131,31 @@ test('a resolver answer of the wrong shape throws', t => {
   const { engine } = setup(t, skill, () => ({ swap: true }));
   assert.throws(() => engine.executeTurn(), /targetSelectionResolver must return/);
 });
+
+test('strictTargeting throws instead of silently re-rolling targets picked from the original side', t => {
+  const hit = new Skill({ id: 'legacy_hit', name: 'hit', actions: [{ type: 'DAMAGE', power: 1 }] });
+  class Legacy extends Skill {
+    execute(caster, allies, enemies, logger, engine) {
+      engine.selectTargets(caster, 'ENEMY_SINGLE');
+      hit.execute(caster, allies, enemies, logger, engine, { targets: [enemies[0]], ignoreSp: true });
+    }
+  }
+  const skill = new Legacy({ id: 'legacy', name: 'legacy', actions: [] });
+  const { engine } = setup(t, skill, () => ({ swapSides: true }), { strictTargeting: true });
+  assert.throws(() => engine.executeTurn(), /legacy_hit.*strictTargeting/);
+});
+
+test('strictTargeting accepts targets that follow the swap and is off by default', t => {
+  const hit = new Skill({ id: 'shell_hit', name: 'hit', actions: [{ type: 'DAMAGE', power: 1 }] });
+  class Shell extends Skill {
+    execute(caster, allies, enemies, logger, engine) {
+      const picked = engine.selectTargets(caster, 'ENEMY_SINGLE')[0];
+      hit.execute(caster, allies, enemies, logger, engine, { targets: [picked], ignoreSp: true });
+    }
+  }
+  const skill = new Shell({ id: 'shell', name: 'shell', actions: [] });
+  const strict = setup(t, skill, () => ({ swapSides: true }), { strictTargeting: true });
+  assert.doesNotThrow(() => strict.engine.executeTurn());
+  assert.equal(new BattleEngine([], [], {}).strictTargeting, false);
+  assert.throws(() => new BattleEngine([], [], { strictTargeting: 'yes' }), /strictTargeting must be a boolean/);
+});

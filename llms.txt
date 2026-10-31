@@ -29,6 +29,7 @@ const { winner, logs } = new BattleEngine([hero], [boss]).start();
 - 被動寫戰報：`logger.addLog({ type: 'SKILL_TEXT', actorId: self.id, message })`。
 - 要擲骰用框架的 `random()`，不要用 `Math.random()`，否則 `rng: createSeededRandom(seed)` 無法重現戰鬥。
 - 戰報文字可用 `text: { action, hit, miss, ... }` 片段覆寫，或 `message: ctx => string` 整句覆寫。BUFF 的預設開頭是空字串。
+- 自己挑目標用 `engine.targetPool` / `engine.selectTargets`（混亂、附身才會作用），附帶效果看 `skill.execute(...)` 回傳的 `report.landed`；測試可開 `strictTargeting: true` 抓出直接從 enemies 挑人的寫法。
 - 不要為了 Boss 機制改框架原始碼；先找 REFERENCE.md 裡的觸發器與 BattleEngine 選項（hitResolver、actionTargetResolver、skillSelectionResolver、roundStart、battleEnd）。
 
 ## 文件

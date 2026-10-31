@@ -56,6 +56,12 @@ class BattleEngine {
     this.actionTargetResolver = options.actionTargetResolver;
     // 延後的目標判定（1.0.41）：同一個行動槽第一次挑「不是自己」的目標時才問，見 docs/ACTIONS.md。
     this.targetSelectionResolver = options.targetSelectionResolver;
+    // 嚴格的目標判定（1.0.47）：敵我反轉時，直接從原本那一邊挑的 options.targets 不再悄悄重抽，改成拋錯。
+    // 給測試與平衡腳本開，正式戰鬥維持預設（關），寫錯的招式才不會讓整場戰鬥中斷。見 docs/ACTIONS.md。
+    if (options.strictTargeting !== undefined && typeof options.strictTargeting !== 'boolean') {
+      throw new Error('strictTargeting must be a boolean');
+    }
+    this.strictTargeting = options.strictTargeting === true;
     this.skillSelectionResolver = options.skillSelectionResolver;
     this.battleEnd = options.battleEnd;
     this.actionTargetOverride = null;

@@ -107,6 +107,25 @@ new Skill({ id, name, actions: [...], tier, tags, uncounterable, counterChanceMu
 | `counterChanceMultiplier` | `1` | 每一擊被反擊的機率倍率（0～1） |
 | `counterStyle` | `'summary'` | 當作 `counterSkill` 時的戰報呈現：`'summary'` 或 `'detailed'` |
 
+### 施放結果（`execute` 的回傳值，1.0.47）
+
+`skill.execute(caster, allies, enemies, logger, engine, options)` 回傳這一次施放的結果：
+
+```js
+const report = hit.execute(caster, allies, enemies, logger, engine, { targets: [target] });
+for (const unit of report.landed) unit.addBuff(stun, engine); // 只掛在真的打到的人身上
+```
+
+| 欄位 | 說明 |
+| --- | --- |
+| `skill` / `caster` | 這一次施放 |
+| `landed` | 至少打到一擊的目標（含被格擋、被護盾吃掉） |
+| `targets` | 每個出手過的目標一筆：`target`、`attempts`、`landed`、`missed`、`countered`、`blocked`、`crits`、`damage`、`actualDamage`、`shieldAbsorbed`、`defeated` |
+
+範圍是這一次 `execute` 的傷害段：別人的反擊、`CAST_SKILL` 叫出來的子技能各有自己的結果。
+覆寫了 `execute` 的技能不一定會把結果往上傳，直接走基底 `Skill` 的呼叫才保證拿得到。
+附帶效果用它判斷，不要翻 `logger.logs` 找 `MISS`、也不要在打之前記血量比較：混亂把目標換掉時兩種都會判錯。
+
 ### action 共通欄位
 
 | 欄位 | 預設 | 說明 |
@@ -240,6 +259,7 @@ new BattleEngine(teamA, teamB, options).start()
 | `hitResolver` | `({ caster, target, skill, action, hitIndex, turn, engine }) => { hitRateModifier, forceMiss, evadeMessage, hitMessage, afterRoll }`，逐擊調整命中 |
 | `actionTargetResolver` | `({ caster, skill, allies, enemies, engine })`，出手前改目標：回傳目標陣列、`{ targets, uncounterable }`、`{ swapSides: true, excludeSelf? }`（混亂），或 `undefined` |
 | `targetSelectionResolver` | 參數多了 `targetType`，在行動槽第一次挑目標時才問一次，回傳格式同上 |
+| `strictTargeting` | `true` 時，敵我反轉下直接從原本那一邊挑的 `options.targets` 會拋錯，而不是悄悄重抽。給測試與平衡腳本開 |
 | `skillSelectionResolver` | `({ caster, skill, allies, enemies, engine }) => Skill \| undefined`，換掉這一槽抽到的招 |
 
 鉤子裡可以用的 `engine` 成員：
@@ -304,3 +324,5 @@ new BattleEngine(teamA, teamB, options).start()
 5. **`duration` 算的是持有者的行動槽**，不是回合。每回合每人大約 2 槽。
 6. **鉤子裡擲骰用 `random()`**，否則同一個種子跑不出同一場。
 7. **讀能力值用 `getEffectiveStats()`**，`stats` 是原始值；`STAT` Buff 只影響前者。
+8. **自己挑目標要走 `engine.targetPool` / `selectTargets`**，附帶效果看 `execute` 回傳的 `landed`。直接從 `enemies` 挑人再對同一個人上效果，
+   混亂時傷害會被換到別人身上、效果卻留在原處。測試開 `strictTargeting: true` 可以抓出這種寫法。
