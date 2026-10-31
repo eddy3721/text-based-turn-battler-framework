@@ -176,6 +176,7 @@ for (const unit of report.landed) unit.addBuff(stun, engine); // 只掛在真的
 ## Buff
 
 Buff 用設定物件表示：放在 BUFF action 的 `buffs`、Entity 的 `buffs`，或在被動裡 `entity.addBuff(config)`。
+`addBuff` 回傳掛上的 Buff（1.0.49）。覆寫 `addBuff` 拒收某個 Buff（魔法抗性之類）時回傳 `false`，BUFF action 就不會印那一句施加訊息；自己寫 `_execute` 直接呼叫 `addBuff` 的技能，也照回傳值決定要不要印。
 
 | 欄位 | 說明 |
 | --- | --- |

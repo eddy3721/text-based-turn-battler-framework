@@ -669,7 +669,8 @@ class Skill {
         else if (action.type === 'BUFF') {
           const buffs = action.buffs || [];
           buffs.forEach(buffConfig => {
-            target.addBuff(buffConfig, context);
+            // 被拒收（addBuff 回傳 false）就不印施加句，免得戰報一邊說擋下一邊說中了。
+            if (target.addBuff(buffConfig, context) === false) return;
             logger.addLog({
               type: 'BUFF_APPLY',
               actorId: caster.id,

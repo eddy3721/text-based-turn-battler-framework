@@ -308,6 +308,8 @@ class Entity {
     return removed;
   }
 
+  // 回傳掛上的 Buff（1.0.49）。子類或遊戲端可以覆寫 addBuff 拒收（魔法抗性之類），
+  // 拒收時回傳 false：BUFF action 看到 false 就不印「掛上了」的那一句。
   addBuff(buffConfig, context) {
     if (buffConfig.stackPolicy === 'refresh') {
       this.buffs = this.buffs.filter(buff => buff.id !== buffConfig.id);
@@ -316,6 +318,7 @@ class Entity {
     if (context?.counterSource) buff.counterSource = { ...context.counterSource };
     buff.appliedRound = context?.currentTurn;
     this.buffs.push(buff);
+    return buff;
   }
 
   // 回合結束時，減少所有 buff 持續時間，並清除過期的
