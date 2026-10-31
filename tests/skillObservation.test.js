@@ -42,3 +42,20 @@ test('AFTER_SKILL_CAST is only broadcast to opponents', () => {
 
   assert.equal(allyObservations, 0);
 });
+
+test('AFTER_ALLY_SKILL_CAST reaches living teammates but not the caster or opponents', () => {
+  const seen = [];
+  const watch = id => ({ trigger: 'AFTER_ALLY_SKILL_CAST', action: (self, cast) => seen.push([self.id, cast.caster.id, cast.skill.id]) });
+  const skill = new Skill({ id: 'spell', name: 'spell', actions: [{ type: 'DAMAGE', stat: 'int' }] });
+  const caster = make('caster', 'B', { skills: [skill], passives: [watch()] });
+  const ally = make('ally', 'B', { passives: [watch()] });
+  const fallen = make('fallen', 'B', { passives: [watch()] });
+  const opponent = make('opponent', 'A', { passives: [watch()] });
+  const engine = new BattleEngine([opponent], [caster, ally, fallen], { luckEvents: { enabled: false } });
+  fallen.stats.hp = 0;
+  fallen.isAlive = false;
+
+  skill.execute(caster, [caster, ally, fallen], [opponent], engine.logger, engine);
+
+  assert.deepEqual(seen, [['ally', 'caster', 'spell']]);
+});

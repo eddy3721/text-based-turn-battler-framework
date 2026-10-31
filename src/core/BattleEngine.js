@@ -288,6 +288,14 @@ class BattleEngine {
       if (!observer.isAlive) continue;
       observer.runDamagePassives('AFTER_SKILL_CAST', cast, this.logger, this);
     }
+    // 隊友那一邊另開觸發器（1.0.48）：既有的 AFTER_SKILL_CAST 被動都假設看到的是對手，
+    // 直接放寬範圍會讓它們開始對自己人起反應。施放者本人不算隊友。
+    const teammates = caster.team === 'A' ? this.teamA : this.teamB;
+    for (const observer of [...teammates]) {
+      if (this.result) break;
+      if (observer === caster || !observer.isAlive) continue;
+      observer.runDamagePassives('AFTER_ALLY_SKILL_CAST', cast, this.logger, this);
+    }
   }
 
   // 出招之前（1.0.35）：施放者的敵方可以先對這一招做手腳。cast.damageMultiplier 會乘進

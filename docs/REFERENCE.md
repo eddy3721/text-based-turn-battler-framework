@@ -220,6 +220,7 @@ Buff 用設定物件表示：放在 BUFF action 的 `buffs`、Entity 的 `buffs`
 | `AFTER_REST` | 喘息的單位 | `{ value }` | 同上 | 喘息之後；被動可提供 `restMessage(self, ctx)` 換掉喘息台詞 |
 | `BEFORE_SKILL_CAST` | 施放者的敵方 | `{ caster, skill, damageMultiplier, isCounter, isNormalAttack }` | 同上 | 出招之前；改 `ctx.damageMultiplier` 會影響這一招所有傷害段 |
 | `AFTER_SKILL_CAST` | 施放者的敵方 | `{ caster, skill }` | 同上 | 每次技能執行完 |
+| `AFTER_ALLY_SKILL_CAST` | 施放者的存活隊友（不含施放者） | `{ caster, skill }` | 同上 | 同上，給要看自己人出招的被動（1.0.48） |
 | `BEFORE_DAMAGE` | 受擊者 | `hit` | `(self, hit, logger)` | 改 `hit.damage`、設 `hit.blocked` / `hit.blockMethod`。可重複觸發 |
 | `LAST_STAND` | 受擊者 | `hit` | `(self, hit, logger)` | 只在這一擊仍會致死時；把 `hit.damage` 壓到 `hp - 1` 就能保命。台詞會排在傷害那行之後 |
 | `AFTER_DAMAGE_RECEIVED` | 受擊者 | `hit` | `(self, hit, logger, engine)` | 每一擊、真的掉血之後 |
