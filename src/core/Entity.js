@@ -215,7 +215,10 @@ class Entity {
   // guard self.isAlive; observers can still record the final actual HP loss.
   runDamagePassives(trigger, hit, logger, engine) {
     for (const passive of [...this.passives]) {
-      if (engine?.result) break;
+      // 勝負已定就不再跑，免得結果出來之後還有人掛 Buff、扣血、插隊。
+      // 標了 afterResult 的被動照跑（1.0.50）：打倒最後一個敵人時的台詞這類只做演出的反應，
+      // 否則它們在最需要出現的那一擊反而永遠不會觸發。它們不能改變結果，引擎也不會再判一次勝負。
+      if (engine?.result && !passive.afterResult) continue;
       if (passive.trigger !== trigger) continue;
       if (passive.enabled && !passive.enabled(this, hit)) continue;
       passive.action?.(this, hit, logger, engine);

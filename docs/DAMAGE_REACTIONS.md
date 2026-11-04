@@ -93,7 +93,7 @@ new Skill({ id: 'breaker', actions: [
 3. 首次破壞時寫 PART_BREAK → ON_PART_BREAK。
 4. AFTER_DAMAGE_RECEIVED → 原有死亡／HP_BELOW → 攻擊方 AFTER_DAMAGE_DEALT → 勝負檢查。
 
-被動反應若結束戰鬥，後續反應與動作停止。finishDamage 對同一結果物件只結算一次，避免重複累計或重入。
+被動反應若結束戰鬥，後續反應與動作停止。標了 `afterResult: true` 的被動例外（1.0.50）：決勝的那一擊仍會通知它們，給「打倒最後一個敵人時說一句話」這類演出用，它們不應改變戰況。finishDamage 對同一結果物件只結算一次，避免重複累計或重入。
 直接呼叫 takeDamage 預設立即結算；需要先寫日誌時傳 `deferReactions: true`，再呼叫 finishDamage。
 預設命中文字會帶部位名稱；自訂 message/text 可讀取 partId、partName、partDamage。
 DAMAGE／BLOCK 保留部位欄位；反擊摘要以 `partHits` 保存逐擊部位結果。

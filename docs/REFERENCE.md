@@ -236,6 +236,9 @@ Buff 用設定物件表示：放在 BUFF action 的 `buffs`、Entity 的 `buffs`
 另一種寫法是血量門檻：`{ condition: 'HP_BELOW', threshold: 0.5, action: (self, logger, engine) => {} }`，
 HP 比例第一次降到門檻以下時執行一次。**注意簽名沒有 ctx。**
 
+勝負一定，引擎就不再跑被動。被動加上 `afterResult: true` 時照跑（1.0.50），給打倒最後一個敵人的台詞這類只做演出的反應用：
+決勝的那一擊之後，`AFTER_ATTACK_RECEIVED`、`AFTER_ATTACK_DEALT` 等觸發點仍會叫到它，排在 `BATTLE_END` 之前。它不能改變結果，引擎也不會再判一次勝負。
+
 被動上還可以放 `enemySkillCastMultiplier`（搭配 `id`）：持有者存活時，敵方的技能施放率乘上這個值，見 [SKILL_MODIFIERS.md](SKILL_MODIFIERS.md)。
 
 `hit` 主要欄位：`caster`、`target`、`skill`、`action`、`damage`（可改）、`actualDamage`、`lethal`、`blocked`、
