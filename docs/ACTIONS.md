@@ -61,6 +61,20 @@
 全隊都倒下時勝負已經判定，`whileDead` 被動沒有機會執行：這是「等隊友撐住，自己再回來」，不是保命。
 典型用途是陣亡後隔幾回合重生的單位。測試：`tests/battleStart.test.js`。
 
+### 換掉隊友這一動（`ALLY_SKILL_SELECT`，1.0.51）
+
+隊友選好這一槽的招（含喘息以外的普攻、技能、開場技能）之後、執行之前，引擎依隊伍順序問施放者的隊友
+（不含施放者本人）身上 `trigger: 'ALLY_SKILL_SELECT'` 的被動。被動提供 `selectSkill(self, ctx, engine)`，
+`ctx` 是 `{ caster, skill, allies, enemies }`；回傳一個技能就換掉這一招，回傳 `undefined` 就問下一個。
+第一個回傳技能的被動決定，之後的不再問。
+
+- 倒下的隊友只問標了 `whileDead: true` 的被動。典型用途是「倒地的人要隊友這一動改來打醒他」：
+  被動回傳一個打醒用的技能，在裡面累積進度、夠了再 `engine.revive`。
+- 遭遇戰的 `skillSelectionResolver` 先問；它已經換過的這一槽不再問被動，樓層規則優先。
+- 引擎本身不擲骰；被動自己擲的骰照常吃亂數，沒有這種被動時亂數序列不變。
+
+測試：`tests/allySkillSelect.test.js`。
+
 ## 戰鬥開場（`BATTLE_START` 被動，1.0.40）
 
 `start()` 印完 `BATTLE_START`、`openingLogs` 與開場台詞之後、第 1 回合之前，引擎對每個存活單位執行一次

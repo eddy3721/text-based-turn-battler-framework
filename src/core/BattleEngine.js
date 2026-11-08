@@ -335,6 +335,29 @@ class BattleEngine {
     this.checkWinCondition();
   }
 
+  // 隊友選好這一槽的招之後、執行之前，問一次施放者隊友身上的 ALLY_SKILL_SELECT 被動（1.0.51），
+  // 被動的 selectSkill 可以換掉這一招：例如倒在地上的人要隊友這一動改來打醒他。
+  // 遭遇戰的 skillSelectionResolver 已經換過的就不問，樓層規則優先。倒下的隊友只問標了 whileDead 的被動。
+  // 第一個回傳技能的被動決定；全部回傳 undefined 就照原本的招。引擎不擲骰，沒用到時亂數序列不變。
+  allySkillSelection(caster, skill, allies, enemies) {
+    const ctx = { caster, skill, allies, enemies };
+    for (const ally of allies) {
+      if (ally === caster) continue;
+      for (const passive of ally.passives) {
+        if (passive.trigger !== 'ALLY_SKILL_SELECT') continue;
+        if (!ally.isAlive && !passive.whileDead) continue;
+        if (passive.enabled && !passive.enabled(ally, ctx)) continue;
+        const replacement = passive.selectSkill?.(ally, ctx, this);
+        if (replacement === undefined) continue;
+        if (!replacement || typeof replacement.execute !== 'function') {
+          throw new Error('ALLY_SKILL_SELECT selectSkill must return a skill or undefined.');
+        }
+        return replacement;
+      }
+    }
+    return skill;
+  }
+
   // 回合開始時（遭遇戰的 roundStart 之後、疲勞與 ROUND_START Buff 之前）
   // 對每個存活單位執行 trigger: 'ROUND_START' 的被動。見 docs/ACTIONS.md。
   notifyRoundStart() {
@@ -732,6 +755,7 @@ class BattleEngine {
             skillId: silenced.skill.id, message: silenced.buff.silenceMessage(entity, silenced.skill) });
         }
 
+        let replacedByEncounter = false;
         if (selectedSkill && this.skillSelectionResolver) {
           const replacement = this.skillSelectionResolver({
             caster: entity, skill: selectedSkill, allies, enemies, engine: this
@@ -741,8 +765,10 @@ class BattleEngine {
               throw new Error('skillSelectionResolver must return a skill or undefined.');
             }
             selectedSkill = replacement;
+            replacedByEncounter = true;
           }
         }
+        if (selectedSkill && !replacedByEncounter) selectedSkill = this.allySkillSelection(entity, selectedSkill, allies, enemies);
 
         if (selectedSkill && !entity.isPanicked()) {
           // 標記「這個行動槽是普攻」，派發型普攻轉發給子技能後仍收得到逐擊費用。

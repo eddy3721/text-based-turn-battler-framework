@@ -23,7 +23,7 @@ new BattleEngine(teamA, teamB, options).start()
       DOT/HOT 結算 → 暈眩／麻痺擲骰 → BEFORE_ACTION 觸發型 Buff → 幸運事件
       → 選招：openingSkill（第一次行動）> 以 skillCastRate 機率從 skills 抽一招 > normalAttack
         （普攻付不出 SP 時改為喘息 REST）
-      → actionTargetResolver / skillSelectionResolver → 執行 → AFTER_ACTION 被動
+      → skillSelectionResolver → 隊友的 ALLY_SKILL_SELECT 被動 → actionTargetResolver → 執行 → AFTER_ACTION 被動
       → 這個單位的 Buff 持續時間 -1
       → 插隊行動（engine.insertAction 排進來的）
   勝負已定或回合用盡 → options.battleEnd → BATTLE_END 日誌
@@ -222,6 +222,7 @@ Buff 用設定物件表示：放在 BUFF action 的 `buffs`、Entity 的 `buffs`
 | `BEFORE_SKILL_CAST` | 施放者的敵方 | `{ caster, skill, damageMultiplier, isCounter, isNormalAttack }` | 同上 | 出招之前；改 `ctx.damageMultiplier` 會影響這一招所有傷害段 |
 | `AFTER_SKILL_CAST` | 施放者的敵方 | `{ caster, skill }` | 同上 | 每次技能執行完 |
 | `AFTER_ALLY_SKILL_CAST` | 施放者的存活隊友（不含施放者） | `{ caster, skill }` | 同上 | 同上，給要看自己人出招的被動（1.0.48） |
+| `ALLY_SKILL_SELECT` | 施放者的隊友（不含施放者；倒下的只問 `whileDead`） | `{ caster, skill, allies, enemies }` | 不用 `action`，改提供 `selectSkill(self, ctx, engine)` | 隊友選好招、執行之前；回傳技能就換掉這一招，`undefined` 不換。遭遇戰的 `skillSelectionResolver` 換過就不問（1.0.51） |
 | `BEFORE_DAMAGE` | 受擊者 | `hit` | `(self, hit, logger)` | 改 `hit.damage`、設 `hit.blocked` / `hit.blockMethod`。可重複觸發 |
 | `LAST_STAND` | 受擊者 | `hit` | `(self, hit, logger)` | 只在這一擊仍會致死時；把 `hit.damage` 壓到 `hp - 1` 就能保命。台詞會排在傷害那行之後 |
 | `AFTER_DAMAGE_RECEIVED` | 受擊者 | `hit` | `(self, hit, logger, engine)` | 每一擊、真的掉血之後 |
