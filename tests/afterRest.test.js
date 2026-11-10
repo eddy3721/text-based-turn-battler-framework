@@ -11,6 +11,10 @@ function make(id, team, { passives = [], stats = {} } = {}) {
   });
 }
 
+// SP 0 是「快累到不行」：每個行動槽有 20% 擲到「累得無法動彈」直接跳過，走不到喘息（約每 150 次撞到一次）。
+// 亂數固定在 0.5，喘息這條路才是確定的。
+const calm = t => t.mock.method(Math, 'random', () => 0.5);
+
 function restingPair(passives) {
   const tired = make('tired', 'A', { passives, stats: { spd: 100 } });
   tired.stats.sp = 0;
@@ -19,7 +23,8 @@ function restingPair(passives) {
   return { tired, engine: new BattleEngine([tired], [foe], { luckEvents: { enabled: false }, maxTurns: 1 }) };
 }
 
-test('AFTER_REST runs after the rest log with logger, engine and the recovered SP', () => {
+test('AFTER_REST runs after the rest log with logger, engine and the recovered SP', t => {
+  calm(t);
   const seen = [];
   const { tired, engine } = restingPair([{
     trigger: 'AFTER_REST',
@@ -38,7 +43,8 @@ test('AFTER_REST runs after the rest log with logger, engine and the recovered S
   assert.equal(engine.logger.logs[rest + 1].message, 'after');
 });
 
-test('the first enabled passive with restMessage replaces the default rest line', () => {
+test('the first enabled passive with restMessage replaces the default rest line', t => {
+  calm(t);
   const { engine } = restingPair([
     { trigger: 'AFTER_REST', enabled: () => false, restMessage: () => 'disabled' },
     { trigger: 'AFTER_REST', restMessage: (self, rest) => `${self.name} 站定（${rest.value}）` },
