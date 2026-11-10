@@ -44,6 +44,10 @@ const roll = () => ({
 
     evadeMessage → action.message → action.text.miss → 預設片段
 
+格擋那一側在 1.0.52 補上對應的整句欄位 `hit.blockMessage`（見 [REFERENCE.md](REFERENCE.md) 的 `hit` 欄位），優先序相同：
+
+    blockMessage → action.message → action.text.block → 預設片段
+
 ## evasion 欄位
 
 被動收到的第二個參數帶著這一擊的來龍去脈，欄位與 `BEFORE_DAMAGE` 的 hit 同名：

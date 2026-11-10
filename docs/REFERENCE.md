@@ -223,8 +223,8 @@ Buff 用設定物件表示：放在 BUFF action 的 `buffs`、Entity 的 `buffs`
 | `AFTER_SKILL_CAST` | 施放者的敵方 | `{ caster, skill }` | 同上 | 每次技能執行完 |
 | `AFTER_ALLY_SKILL_CAST` | 施放者的存活隊友（不含施放者） | `{ caster, skill }` | 同上 | 同上，給要看自己人出招的被動（1.0.48） |
 | `ALLY_SKILL_SELECT` | 施放者的隊友（不含施放者；倒下的只問 `whileDead`） | `{ caster, skill, allies, enemies }` | 不用 `action`，改提供 `selectSkill(self, ctx, engine)` | 隊友選好招、執行之前；回傳技能就換掉這一招，`undefined` 不換。遭遇戰的 `skillSelectionResolver` 換過就不問（1.0.51） |
-| `BEFORE_DAMAGE` | 受擊者 | `hit` | `(self, hit, logger)` | 改 `hit.damage`、設 `hit.blocked` / `hit.blockMethod`。可重複觸發 |
-| `LAST_STAND` | 受擊者 | `hit` | `(self, hit, logger)` | 只在這一擊仍會致死時；把 `hit.damage` 壓到 `hp - 1` 就能保命。台詞會排在傷害那行之後 |
+| `BEFORE_DAMAGE` | 受擊者 | `hit` | `(self, hit, logger)` | 改 `hit.damage`、設 `hit.blocked` / `hit.blockMethod`（片段）/ `hit.blockMessage`（整句，1.0.52）。可重複觸發 |
+| `LAST_STAND` | 受擊者 | `hit` | `(self, hit, logger)` | 只在這一擊仍會致死時；把 `hit.damage` 壓到 `hp - 1` 就能保命。台詞會排在傷害那行之後。同樣可設 `hit.blockMessage` |
 | `AFTER_DAMAGE_RECEIVED` | 受擊者 | `hit` | `(self, hit, logger, engine)` | 每一擊、真的掉血之後 |
 | `AFTER_DAMAGE_DEALT` | 攻擊者 | `hit` | 同上 | 每一擊、目標還活著時 |
 | `AFTER_ATTACK_RECEIVED` | 受擊者 | 整招的彙總 `hit` | 同上 | 一招打完、每個目標一次 |
@@ -243,8 +243,10 @@ HP 比例第一次降到門檻以下時執行一次。**注意簽名沒有 ctx�
 被動上還可以放 `enemySkillCastMultiplier`（搭配 `id`）：持有者存活時，敵方的技能施放率乘上這個值，見 [SKILL_MODIFIERS.md](SKILL_MODIFIERS.md)。
 
 `hit` 主要欄位：`caster`、`target`、`skill`、`action`、`damage`（可改）、`actualDamage`、`lethal`、`blocked`、
-`blockMethod`、`isCrit`、`hitIndex`、`hits`、`isNormalAttack`、`isCounter`、`tags`、`shieldAbsorbed`、
+`blockMethod`、`blockMessage`、`isCrit`、`hitIndex`、`hits`、`isNormalAttack`、`isCounter`、`tags`、`shieldAbsorbed`、
 `source`（`'ATTACK'` / `'DOT'` / `'LUCK_EVENT'` / `'DIRECT'`）。
+
+`hit.blockMessage`（1.0.52）：被格擋（`hit.blocked`）的那一擊整行改寫，給「不是自己擋的」這類 `blockMethod` 拼不出來的演出，例如隊友衝出來替他擋下。字串照印；函式收組句用的 ctx（`caster`、`target`、`value`、`hitIndex`、`blockMethod` 等）加上 `lead`（攻擊方這一擊的開頭，例如「A 使出了 X，」「第 2 擊，」），回傳整句。跟 `evadeMessage` 一樣優先於攻擊方的 `action.message`；沒被格擋時不使用。只有技能打出的傷害行會讀它，直接 `takeDamage` 不印傷害行。型別錯誤直接拋錯。
 
 ## BattleEngine
 

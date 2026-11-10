@@ -62,7 +62,7 @@ class Entity {
   takeDamage(amount, logger, context = {}) {
     // 沒帶標籤的傷害（環境、幸運事件、直接扣血）一律是空陣列，讀取端不必判空。
     const result = { ...context, tags: context.tags ?? EMPTY_TAGS, source: context.source || (context.action?.type === 'DAMAGE' ? 'ATTACK' : 'DIRECT'),
-      target: this, damage: amount, actualDamage: 0, lethal: false, blocked: false, blockMethod: null };
+      target: this, damage: amount, actualDamage: 0, lethal: false, blocked: false, blockMethod: null, blockMessage: null };
     if (!this.isAlive) return { ...result, damage: 0 };
     const partMultiplier = context.action?.partDamageMultiplier ?? 1;
     if (!Number.isFinite(partMultiplier) || partMultiplier < 0) throw new Error('partDamageMultiplier must be finite and nonnegative');

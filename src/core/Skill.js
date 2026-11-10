@@ -91,6 +91,13 @@ const DefaultText = {
 
 const resolvePart = (part, ctx) => (typeof part === 'function' ? part(ctx) : part);
 
+// 防守方的整句格擋（hit.blockMessage，1.0.52）：字串照印；函式收組句用的 ctx 加上 lead
+// （攻擊方這一擊的開頭，例如「A 使出了 X，」），回傳整句。寫錯型別直接拋錯，不默默退回預設句。
+const resolveBlockMessage = (blockMessage, ctx) => {
+  const message = typeof blockMessage === 'function' ? blockMessage(ctx) : blockMessage;
+  if (typeof message !== 'string') throw new Error('blockMessage must be a string or a function returning a string');
+  return message;
+};
 /**
  * 建立訊息用的 context，把各 type 缺席的欄位補成一致的預設值，
  * 這樣回呼永遠拿得到同一組鍵，不必判斷自己身處哪一種 action。
@@ -551,13 +558,18 @@ class Skill {
           isCrit,
           blocked: outcome.blocked,
           ...(outcome.shieldAbsorbed ? { shieldAbsorbed: outcome.shieldAbsorbed } : {}),
-          message: composeMessage(
-            action,
-            makeContext(this, caster, { target, targets: [target], value: damage, isCrit, hitIndex,
+          message: (() => {
+            const messageContext = makeContext(this, caster, { target, targets: [target], value: damage, isCrit, hitIndex,
               blocked: outcome.blocked, blockMethod: outcome.blockMethod,
-              partId: outcome.partId, partName: outcome.partName, partDamage: outcome.partDamage }),
-            { isComboHit, isHitLanded: true }
-          )
+              partId: outcome.partId, partName: outcome.partName, partDamage: outcome.partDamage });
+            // 防守方的整句格擋（1.0.52）：「是誰、怎麼擋下的」只有防守方知道，所以跟 evadeMessage 一樣
+            // 蓋過攻擊方的 action.message。沒設時照舊組句，既有戰報一字不變。
+            if (outcome.blocked && outcome.blockMessage != null) {
+              return resolveBlockMessage(outcome.blockMessage, { ...messageContext,
+                lead: Skill.composeLead(this, action, caster, target, { hitIndex, isComboHit }) });
+            }
+            return composeMessage(action, messageContext, { isComboHit, isHitLanded: true });
+          })()
         });
         target.finishDamage(outcome, logger, context);
         return true;

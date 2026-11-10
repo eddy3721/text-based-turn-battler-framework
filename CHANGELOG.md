@@ -2,6 +2,10 @@
 
 版本號只往上加，不重複使用同一個版本號重新打包。沒有特別註明時，既有技能的行為與亂數序列不變。
 
+## 1.0.52（2026-11-10）
+
+- 傷害側新增 `hit.blockMessage`：`BEFORE_DAMAGE`／`LAST_STAND` 可以把被格擋那一擊的整行改寫（字串，或收 `ctx`＋`lead` 的函式），給隊友衝出來替人擋下這類 `blockMethod` 拼不出來的演出。與 `evadeMessage` 對稱，優先於攻擊方的 `action.message`。沒設時戰報一字不變，亂數序列不變。
+
 ## 1.0.51（2026-11-08）
 
 - 新增被動觸發器 `ALLY_SKILL_SELECT`：隊友選好這一槽的招之後、執行之前，被動的 `selectSkill(self, ctx, engine)` 可以換掉那一招。倒下的隊友只問標了 `whileDead` 的被動，給「倒地的人讓隊友改來打醒他」這類機制用。遭遇戰的 `skillSelectionResolver` 換過的不再問。沒有這種被動時行為與亂數序列不變。
