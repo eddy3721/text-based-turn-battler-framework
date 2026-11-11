@@ -62,7 +62,8 @@ new Entity({ id, name, team, stats, normalAttack, skills, passives, ... })
 | `sanity` | `false` | 理智系統設定，見 [SANITY.md](SANITY.md) |
 
 常用方法（被動裡會用到）：`addBuff(config)`、`removeBuffs('positive' | 'negative')`、`heal(amount)`、
-`restoreSp(amount)`、`takeDamage(amount, logger, context)`、`getEffectiveStats()`、`changeSanity(delta, logger)`。
+`restoreSp(amount)`、`takeDamage(amount, logger, context)`、`getEffectiveStats()`、`changeSanity(delta, logger)`、
+`addBuildup(key, amount, { threshold, growth })`／`getBuildup(key)`／`clearBuildup(key)`（異常累積，見 [BUILDUP.md](BUILDUP.md)）。
 狀態欄位：`isAlive`、`stats`（原始值，HP/SP 直接在這裡）、`buffs`、`team`。
 
 ### 能力值（stats）

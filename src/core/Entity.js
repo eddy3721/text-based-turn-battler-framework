@@ -48,6 +48,44 @@ class Entity {
     this.parts = createBodyParts(parts);
     this.settledDamage = new WeakSet();
     this.sanity = sanity === false ? null : new Sanity(sanity);
+    // 異常累積量表（1.0.53），見 docs/BUILDUP.md。記在承受者身上，誰打的都灌進同一條。
+    this.buildups = new Map();
+  }
+
+  // 累積某一種異常。滿了就發動：量表歸零、門檻加上 growth（抗性），回傳 triggered: true。
+  // 發動後會怎樣由呼叫端決定——框架只管量表，不解讀「凍傷」「出血」是什麼。
+  // 同一種異常的門檻與成長要一致，否則拋錯：兩個來源各帶一套數字，量表就沒有意義了。
+  addBuildup(key, amount, { threshold, growth = 0 } = {}) {
+    if (typeof key !== 'string' || !key) throw new Error('Buildup key must be a nonempty string');
+    if (!Number.isFinite(amount) || amount < 0) throw new Error(`Buildup "${key}" amount must be finite and nonnegative`);
+    if (!Number.isFinite(threshold) || threshold <= 0 || !Number.isFinite(growth) || growth < 0) {
+      throw new Error(`Buildup "${key}" needs a positive finite threshold and a finite nonnegative growth`);
+    }
+    let gauge = this.buildups.get(key);
+    if (!gauge) {
+      gauge = { value: 0, baseThreshold: threshold, growth, threshold, count: 0 };
+      this.buildups.set(key, gauge);
+    } else if (gauge.baseThreshold !== threshold || gauge.growth !== growth) {
+      throw new Error(`Buildup "${key}" was created with threshold ${gauge.baseThreshold} / growth ${gauge.growth}`);
+    }
+    if (!this.isAlive) return { key, amount: 0, value: gauge.value, threshold: gauge.threshold, count: gauge.count, triggered: false };
+    gauge.value += amount;
+    const triggered = gauge.value >= gauge.threshold;
+    // 溢出的部分不留：原作的異常發動後量表從零開始，下一次要重新灌滿（加上抗性）。
+    if (triggered) Object.assign(gauge, { value: 0, threshold: gauge.threshold + gauge.growth, count: gauge.count + 1 });
+    return { key, amount, value: gauge.value, threshold: gauge.threshold, count: gauge.count, triggered };
+  }
+
+  // 目前的量表快照，沒累積過是 null。
+  getBuildup(key) {
+    const gauge = this.buildups.get(key);
+    return gauge ? { key, value: gauge.value, threshold: gauge.threshold, count: gauge.count } : null;
+  }
+
+  // 清掉累積值（淨化、解凍）。門檻與發動次數保留——抗性不會因為被淨化就消失。
+  clearBuildup(key) {
+    const gauge = this.buildups.get(key);
+    if (gauge) gauge.value = 0;
   }
 
   isPanicked() { return this.sanity?.isPanicked() ?? false; }

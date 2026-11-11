@@ -98,6 +98,7 @@ console.log(result.winner); // 'TEAM_A' | 'TEAM_B' | 'DRAW'
 | [LUCK_EVENTS.md](docs/LUCK_EVENTS.md) | 幸運事件（紫／紅）與遞減曲線 |
 | [INANIMATE.md](docs/INANIMATE.md) | 不能行動的目標（`actionDisabled`／`lockedStats`）與整次攻擊結束後的反應 |
 | [SANITY.md](docs/SANITY.md) | 可選理智、自訂刻度與規則、全局回合崩潰及恢復 |
+| [BUILDUP.md](docs/BUILDUP.md) | 異常累積量表：記在承受者身上，不同來源灌同一條，滿了才發動 |
 
 版本變動見 [CHANGELOG.md](CHANGELOG.md)。
 

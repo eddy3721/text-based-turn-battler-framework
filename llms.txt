@@ -49,6 +49,7 @@ const { winner, logs } = new BattleEngine([hero], [boss]).start();
 - [docs/LUCK_EVENTS.md](docs/LUCK_EVENTS.md): 幸運事件
 - [docs/INANIMATE.md](docs/INANIMATE.md): 不能行動的目標
 - [docs/SANITY.md](docs/SANITY.md): 可選理智系統
+- [docs/BUILDUP.md](docs/BUILDUP.md): 異常累積量表（凍傷、出血這類滿了才發動的異常），記在承受者身上
 
 ## 範例（都可直接執行，固定種子）
 

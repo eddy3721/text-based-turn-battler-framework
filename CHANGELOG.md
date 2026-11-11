@@ -2,6 +2,10 @@
 
 版本號只往上加，不重複使用同一個版本號重新打包。沒有特別註明時，既有技能的行為與亂數序列不變。
 
+## 1.0.53（2026-11-11）
+
+- 新增異常累積量表：`Entity.addBuildup(key, amount, { threshold, growth })`、`getBuildup(key)`、`clearBuildup(key)`。量表記在承受者身上，不同角色灌同一條，滿了歸零並提高門檻；發動後的效果由遊戲層決定。見 [docs/BUILDUP.md](docs/BUILDUP.md)。沒用到時戰報與亂數序列不變。
+
 ## 1.0.52（2026-11-10）
 
 - 傷害側新增 `hit.blockMessage`：`BEFORE_DAMAGE`／`LAST_STAND` 可以把被格擋那一擊的整行改寫（字串，或收 `ctx`＋`lead` 的函式），給隊友衝出來替人擋下這類 `blockMethod` 拼不出來的演出。與 `evadeMessage` 對稱，優先於攻擊方的 `action.message`。沒設時戰報一字不變，亂數序列不變。
