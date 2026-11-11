@@ -203,6 +203,10 @@ class Skill {
       if (action.type === 'CHANGE_SANITY' && !Number.isFinite(action.amount)) {
         throw new Error('CHANGE_SANITY requires a finite amount');
       }
+      if (action.ignoreShield !== undefined && (action.type !== 'DAMAGE' || !(typeof action.ignoreShield === 'boolean' ||
+          (typeof action.ignoreShield === 'number' && Number.isFinite(action.ignoreShield) && action.ignoreShield >= 0 && action.ignoreShield <= 1)))) {
+        throw new Error('ignoreShield requires a DAMAGE action and a boolean or a number in [0, 1]');
+      }
       if (action.ignoreInvincible !== undefined && (action.type !== 'DAMAGE' || typeof action.ignoreInvincible !== 'boolean')) {
         throw new Error('ignoreInvincible requires a DAMAGE action and a boolean');
       }

@@ -60,6 +60,27 @@ test('shield stacks absorb in order, apply after damage multipliers, and ignoreS
   assert.equal(target.stats.hp, 980);
 });
 
+test('a fractional ignoreShield lets that share through and the shield soaks the rest (1.0.54)', () => {
+  const target = make('target', 'B', { buffs: [shield(100)] });
+  const outcome = target.takeDamage(40, null, { source: 'ATTACK', action: { type: 'DAMAGE', ignoreShield: 0.25 } });
+  assert.equal(outcome.shieldAbsorbed, 30);
+  assert.equal(outcome.damage, 10);
+  assert.equal(target.stats.hp, 990);
+  assert.equal(target.buffs[0].shield.value, 70);
+  // 盾不夠吸時，穿過去的那一份照樣不碰盾，吸不完的也落到 HP。
+  const small = make('small', 'B', { buffs: [shield(5)] });
+  const rest = small.takeDamage(40, null, { source: 'ATTACK', action: { type: 'DAMAGE', ignoreShield: 0.25 } });
+  assert.equal(rest.shieldAbsorbed, 5);
+  assert.equal(small.stats.hp, 965);
+});
+
+test('ignoreShield must be a boolean or a share in [0, 1]', () => {
+  for (const bad of [1.5, -0.1, Number.NaN, 'yes']) {
+    assert.throws(() => new Skill({ id: 'x', name: 'x', actions: [{ type: 'DAMAGE', ignoreShield: bad }] }), /ignoreShield/);
+  }
+  assert.doesNotThrow(() => new Skill({ id: 'y', name: 'y', actions: [{ type: 'DAMAGE', ignoreShield: 0.3 }] }));
+});
+
 test('shield-blocked attacks use the default block text and carry shieldAbsorbed in the log', () => {
   const attacker = make('attacker', 'A', { stats: { atk: 200, tec: 999 } });
   const target = make('target', 'B', { buffs: [shield(1e9)] });

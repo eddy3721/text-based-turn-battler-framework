@@ -6,6 +6,13 @@ const FATIGUE_SEVERITY = { NORMAL: 0, TIRED: 1, EXHAUSTED: 2 };
 // 以預設 35% 為準：疲勞 25%、力竭 20%。
 const FATIGUE_CAST_PENALTY = { TIRED: 0.10, EXHAUSTED: 0.15 };
 
+// 這一擊有多少比例穿過護盾：沒設是 0、true 是 1、數字照給的比例（1.0.54）。
+function shieldPierceOf(action) {
+  const value = action?.ignoreShield;
+  if (value === true) return 1;
+  return typeof value === 'number' ? value : 0;
+}
+
 class Entity {
   constructor({ id, name, team, stats, normalAttack, counterSkill = null, openingSkill = null, skills = [], buffs = [], passives = [], dialogues = {}, parts = [], actionDisabled = false, lockedStats = [], fatigueEnabled = true, normalAttackSpCost = 1, sanity = false }) {
     if (!Number.isFinite(normalAttackSpCost) || normalAttackSpCost < 0) throw new Error('normalAttackSpCost must be finite and nonnegative');
@@ -129,11 +136,16 @@ class Entity {
     result.damage = Math.max(0, Math.floor(result.damage));
     // 護盾（1.0.38）：照掛上的順序吸收，扣完的盾碎掉並移除，碎掉的名字留在 shieldsBroken 給 finishDamage 印。
     // 有吸收就算格擋：全吸收是「用護盾擋下了」，吸不完是「用護盾抵擋，造成了 N 點傷害」。
-    if (result.damage > 0 && !context.action?.ignoreShield) {
+    // ignoreShield 可以是 0～1 的比例（1.0.54）：這一部分直接穿過護盾，其餘照常被吸收。true 等於 1。
+    const pierce = shieldPierceOf(context.action);
+    if (result.damage > 0 && pierce < 1) {
+      const passing = Math.floor(result.damage * pierce);
+      let soakable = result.damage - passing;
       for (const buff of this.buffs) {
-        if (!buff.shield || buff.shield.value <= 0 || result.damage <= 0) continue;
-        const absorbed = Math.min(buff.shield.value, result.damage);
+        if (!buff.shield || buff.shield.value <= 0 || soakable <= 0) continue;
+        const absorbed = Math.min(buff.shield.value, soakable);
         buff.shield.value -= absorbed;
+        soakable -= absorbed;
         result.damage -= absorbed;
         result.shieldAbsorbed = (result.shieldAbsorbed || 0) + absorbed;
         if (!result.blocked) { result.blocked = true; result.blockMethod = buff.name || '護盾'; }

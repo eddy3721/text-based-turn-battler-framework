@@ -119,7 +119,10 @@ first shield's name, and `hit.shieldAbsorbed` is the total soaked. The default
 text therefore reads "但是被 X 用護盾擋下了！" for a fully absorbed hit and
 "……用護盾抵擋，造成了 N 點傷害！" for a partial one; DAMAGE logs carry
 `shieldAbsorbed`. Shields absorb attacks, DOT, luck events and direct
-`takeDamage`; an action with `ignoreShield: true` passes through. An attack the
+`takeDamage`; an action with `ignoreShield: true` passes through. Since 1.0.54
+`ignoreShield` may also be a share in [0, 1]: that share of the hit passes
+through untouched and the rest is absorbed as usual (a weapon whose dark
+damage partly goes through a shield). An attack the
 shield soaked completely still counts as received: `AFTER_ATTACK_RECEIVED` and
 `AFTER_ATTACK_DEALT` run with `actualDamage: 0` and the aggregated
 `shieldAbsorbed` (per-hit `AFTER_DAMAGE_RECEIVED` still needs HP lost). The buff's
