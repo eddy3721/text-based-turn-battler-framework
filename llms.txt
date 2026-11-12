@@ -36,7 +36,7 @@ const { winner, logs } = new BattleEngine([hero], [boss]).start();
 
 - [docs/REFERENCE.md](docs/REFERENCE.md): 完整 API 速查：Entity 參數、能力值、action 類型與欄位、Buff 欄位、全部觸發器與簽名、BattleEngine 選項與方法、日誌類型、常見的坑
 - [docs/MECHANICS.md](docs/MECHANICS.md): 召喚、資源、自定義公式、受傷前後被動、CAST_SKILL 與觸發型 Buff、逐波攻擊、可重現戰鬥
-- [docs/ACTIONS.md](docs/ACTIONS.md): BATTLE_START、AFTER_ACTION、ROUND_START、AFTER_REST、BEFORE_SKILL_CAST、insertAction、revive、各種 resolver
+- [docs/ACTIONS.md](docs/ACTIONS.md): BATTLE_START、BATTLE_END、AFTER_ACTION、ROUND_START、AFTER_REST、BEFORE_SKILL_CAST、insertAction、revive、各種 resolver
 - [docs/PROTECTION.md](docs/PROTECTION.md): 無敵、untouchable、forceMiss、damageTaken、healTaken、LAST_STAND、shield
 - [docs/COUNTERS.md](docs/COUNTERS.md): 反擊機率、counterSkill、counterStyle
 - [docs/EVASION.md](docs/EVASION.md): ON_EVADE / AFTER_EVADE

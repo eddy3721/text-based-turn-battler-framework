@@ -97,6 +97,25 @@
 原本開場只有 `openingSkill`，要等持有者第一次行動才放，那時已經印出第 1 回合、別人也可能先出手；
 `ROUND_START` 也一樣晚了一步。典型用途是開場就上好狀態、或先講一句開場白的角色。測試：`tests/battleStart.test.js`。
 
+## 戰鬥結束（`BATTLE_END` 被動，1.0.56）
+
+勝負已定之後（含平手）、遭遇戰的 `battleEnd` 之後、`BATTLE_END` 日誌之前，引擎對兩隊每個單位執行一次
+`trigger: 'BATTLE_END'` 的被動，**倒下的單位也跑**，簽名是 `(self, { winner }, logger, engine)`。
+
+只給結尾演出用，例如格鬥遊戲的「○○ WIN！」：結果已經定了，被動改什麼引擎都不會再判一次，所以不要在這裡扣血或掛狀態。
+要不要開口由被動自己看 `self.isAlive` 與 `winner`。沒有這種被動時戰報與亂數序列不變。測試：`tests/battleEnd.test.js`。
+
+```js
+{
+  id: 'win_call', trigger: 'BATTLE_END',
+  enabled: (self, battle) => battle.winner === `TEAM_${self.team}`,
+  action: (self, battle, logger) => logger.addLog({ type: 'TEXT', actorId: self.id, message: `${self.name} WIN！` })
+}
+```
+
+和 `afterResult: true` 的差別：`afterResult` 是讓本來就會被事件觸發的被動在勝負已定後照跑（打倒最後一個敵人那一擊的台詞），
+`BATTLE_END` 則是不管最後一擊是誰打的，每場固定在結尾跑一次。
+
 ## 喘息之後（`AFTER_REST` 被動，1.0.34）
 
 SP 付不起普攻、停下來喘息的那一槽，引擎在 `REST` 日誌**之後**、疲勞同步與 `tickBuffs()` **之前**，

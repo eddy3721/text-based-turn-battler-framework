@@ -85,7 +85,7 @@ console.log(result.winner); // 'TEAM_A' | 'TEAM_B' | 'DRAW'
 | 文件 | 內容 |
 | --- | --- |
 | [MECHANICS.md](docs/MECHANICS.md) | 架構總覽、召喚與資源、自定義公式、受傷前後的被動、已註冊技能與定時效果、逐波攻擊、可重現戰鬥 |
-| [ACTIONS.md](docs/ACTIONS.md) | 戰鬥開場（`BATTLE_START`）、行動後（`AFTER_ACTION`）、回合開始（`ROUND_START`）、喘息之後（`AFTER_REST`）、出招之前（`BEFORE_SKILL_CAST`）、插隊（`insertAction`）、復活、各種 resolver |
+| [ACTIONS.md](docs/ACTIONS.md) | 戰鬥開場（`BATTLE_START`）、戰鬥結束（`BATTLE_END`）、行動後（`AFTER_ACTION`）、回合開始（`ROUND_START`）、喘息之後（`AFTER_REST`）、出招之前（`BEFORE_SKILL_CAST`）、插隊（`insertAction`）、復活、各種 resolver |
 | [PROTECTION.md](docs/PROTECTION.md) | 無敵、貫通、狀態解除、傷害縮放、保命（`LAST_STAND`）與護盾（`shield`） |
 | [COUNTERS.md](docs/COUNTERS.md) | 一般反擊、技能反擊與傷害條件效果 |
 | [EVASION.md](docs/EVASION.md) | 落空時由防守方描述自己怎麼躲（`ON_EVADE` / `AFTER_EVADE`） |

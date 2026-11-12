@@ -26,7 +26,7 @@ new BattleEngine(teamA, teamB, options).start()
       → skillSelectionResolver → 隊友的 ALLY_SKILL_SELECT 被動 → actionTargetResolver → 執行 → AFTER_ACTION 被動
       → 這個單位的 Buff 持續時間 -1
       → 插隊行動（engine.insertAction 排進來的）
-  勝負已定或回合用盡 → options.battleEnd → BATTLE_END 日誌
+  勝負已定或回合用盡 → options.battleEnd → BATTLE_END 被動 → BATTLE_END 日誌
 回傳 { winner: 'TEAM_A' | 'TEAM_B' | 'DRAW', logs, finalTeamA, finalTeamB }
 ```
 
@@ -217,6 +217,7 @@ Buff 用設定物件表示：放在 BUFF action 的 `buffs`、Entity 的 `buffs`
 | trigger | 誰收到 | `ctx` | 簽名 | 說明 |
 | --- | --- | --- | --- | --- |
 | `BATTLE_START` | 每個存活單位 | `{ maxTurns }` | `(self, ctx, logger, engine)` | 第 1 回合之前一次。見 [ACTIONS.md](ACTIONS.md) |
+| `BATTLE_END` | 兩隊每個單位（含倒下的） | `{ winner }` | 同上 | 勝負已定、`battleEnd` 之後一次，只給結尾演出（1.0.56）。見 [ACTIONS.md](ACTIONS.md) |
 | `ROUND_START` | 每個存活單位（`whileDead: true` 的倒下單位也跑） | `{ round }` | 同上 | 每回合開始 |
 | `AFTER_ACTION` | 兩隊所有存活單位 | `{ actor, skill }` | 同上 | 一個行動槽真的出手之後 |
 | `AFTER_REST` | 喘息的單位 | `{ value }` | 同上 | 喘息之後；被動可提供 `restMessage(self, ctx)` 換掉喘息台詞 |

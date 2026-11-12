@@ -392,6 +392,20 @@ class BattleEngine {
     return true;
   }
 
+  // 戰鬥結束（1.0.56）：勝負已定、遭遇戰的 battleEnd 之後、BATTLE_END 日誌之前，對兩隊每個單位
+  // （含倒下的）執行 trigger: 'BATTLE_END' 的被動，各一次，ctx 是 { winner }。只給結尾演出用：
+  // 這時結果已經定了，被動改什麼引擎都不會再判一次。倒下的單位也跑，要不要開口由被動自己看 self.isAlive。
+  notifyBattleEnd() {
+    const battle = { winner: this.result };
+    for (const entity of [...this.teamA, ...this.teamB]) {
+      for (const passive of [...entity.passives]) {
+        if (passive.trigger !== 'BATTLE_END') continue;
+        if (passive.enabled && !passive.enabled(entity, battle)) continue;
+        passive.action?.(entity, battle, this.logger, this);
+      }
+    }
+  }
+
   // 戰鬥開場（openingLogs 與開場台詞之後、第 1 回合之前）對每個存活單位執行
   // trigger: 'BATTLE_START' 的被動，各一次。被動可以直接分出勝負：有結果就不進回合迴圈。見 docs/ACTIONS.md。
   notifyBattleStart() {
@@ -614,6 +628,7 @@ class BattleEngine {
     // 勝負已定、BATTLE_END 之前：遭遇戰可以在這裡補上結尾演出（例如回顧 actionSlots 的精彩重播）。
     // 這時已經不能改變結果，回傳值不使用。
     this.battleEnd?.(this);
+    this.notifyBattleEnd();
 
     this.logger.addLog({ type: 'BATTLE_END', message: `戰鬥結束，獲勝方: ${this.result}` });
 
