@@ -78,6 +78,10 @@ A passive with `trigger: 'LAST_STAND'` runs **after** every other damage step â€
 only when the hit would still kill its holder (`hit.damage >= hp`). It has the
 same signature as `BEFORE_DAMAGE`, `(self, hit, logger)`, and lowers
 `hit.damage` to survive, typically to `hp - 1`. The result is floored again.
+Several `LAST_STAND` passives run in array order, and the check is repeated
+before each one (1.0.55): once an earlier one has made the hit non-lethal, the
+rest are skipped, so a later "hold at 1 HP" cannot undo an earlier "keep N HP"
+and a once-per-battle save is not spent on a hit that was already survived.
 
 Surviving at 1 HP used to be written as a `BEFORE_DAMAGE` passive, but those run
 in array order. Attackers that amplify a single hit by pushing a temporary

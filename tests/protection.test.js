@@ -125,6 +125,22 @@ test('LAST_STAND runs after amplifiers appended later and only on lethal hits', 
   assert.equal(a.isAlive, true);
 });
 
+test('LAST_STAND stops once an earlier one has made the hit non-lethal (1.0.55)', () => {
+  const ran = [];
+  const b = new Entity({ id: 'b', name: 'b', team: 'B', stats: { hp: 100, maxHp: 100 }, passives: [
+    { id: 'halo', trigger: 'LAST_STAND', action: (self, hit) => { ran.push('halo'); hit.damage = self.stats.hp - 40; } },
+    { id: 'bandage', trigger: 'LAST_STAND', action: (self, hit) => { ran.push('bandage'); hit.damage = self.stats.hp - 1; } }
+  ] });
+  b.takeDamage(500, null, { source: 'DOT' });
+  assert.equal(b.stats.hp, 40, 'the later hold-at-1 does not override the earlier save');
+  assert.deepEqual(ran, ['halo']);
+  // 前一個沒救下來時，後面的照常接手。
+  b.passives[0].enabled = () => false;
+  b.takeDamage(500, null, { source: 'DOT' });
+  assert.equal(b.stats.hp, 1);
+  assert.deepEqual(ran, ['halo', 'bandage']);
+});
+
 test('LAST_STAND logs land after the hit line and before damage reactions (1.0.39)', t => {
   const { b, engine, attack } = setup(t);
   const types = () => engine.logger.logs.map(log => log.type);

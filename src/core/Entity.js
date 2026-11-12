@@ -160,8 +160,11 @@ class Entity {
     // 「撐住了最後一口氣」排在「造成 N 點傷害」前面——還沒挨打就先講挨完的事。
     if (result.damage > 0 && result.damage >= this.stats.hp) {
       const deferred = logger ? { addLog: entry => (result.pendingLogs ||= []).push(entry) } : logger;
+      // 前一個保命已經讓這一擊不致命，後面的就不再執行（1.0.55）：不然光環留下的血會被
+      // 「停在 1 HP」的繃帶再壓一次，兩個每場一次的效果也一起被用掉。
       for (const passive of [...this.passives]) {
         if (passive.trigger !== 'LAST_STAND') continue;
+        if (result.damage < this.stats.hp) break;
         if (passive.enabled && !passive.enabled(this, result)) continue;
         if (passive.action) passive.action(this, result, deferred);
       }

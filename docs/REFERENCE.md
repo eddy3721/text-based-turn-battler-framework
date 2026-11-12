@@ -225,7 +225,7 @@ Buff 用設定物件表示：放在 BUFF action 的 `buffs`、Entity 的 `buffs`
 | `AFTER_ALLY_SKILL_CAST` | 施放者的存活隊友（不含施放者） | `{ caster, skill }` | 同上 | 同上，給要看自己人出招的被動（1.0.48） |
 | `ALLY_SKILL_SELECT` | 施放者的隊友（不含施放者；倒下的只問 `whileDead`） | `{ caster, skill, allies, enemies }` | 不用 `action`，改提供 `selectSkill(self, ctx, engine)` | 隊友選好招、執行之前；回傳技能就換掉這一招，`undefined` 不換。遭遇戰的 `skillSelectionResolver` 換過就不問（1.0.51） |
 | `BEFORE_DAMAGE` | 受擊者 | `hit` | `(self, hit, logger)` | 改 `hit.damage`、設 `hit.blocked` / `hit.blockMethod`（片段）/ `hit.blockMessage`（整句，1.0.52）。可重複觸發 |
-| `LAST_STAND` | 受擊者 | `hit` | `(self, hit, logger)` | 只在這一擊仍會致死時；把 `hit.damage` 壓到 `hp - 1` 就能保命。台詞會排在傷害那行之後。同樣可設 `hit.blockMessage` |
+| `LAST_STAND` | 受擊者 | `hit` | `(self, hit, logger)` | 只在這一擊仍會致死時（多個依序執行，前一個救下來後面的就不跑）；把 `hit.damage` 壓到 `hp - 1` 就能保命。台詞會排在傷害那行之後。同樣可設 `hit.blockMessage` |
 | `AFTER_DAMAGE_RECEIVED` | 受擊者 | `hit` | `(self, hit, logger, engine)` | 每一擊、真的掉血之後 |
 | `AFTER_DAMAGE_DEALT` | 攻擊者 | `hit` | 同上 | 每一擊、目標還活著時 |
 | `AFTER_ATTACK_RECEIVED` | 受擊者 | 整招的彙總 `hit` | 同上 | 一招打完、每個目標一次 |
